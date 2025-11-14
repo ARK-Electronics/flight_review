@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python310", "gcc", "g++", "fftw", "sqlite"]
+
+[phases.install]
+cmds = ["pip install -r app/requirements.txt"]
+
+[start]
+cmd = "cd app && python serve.py --port $PORT --address 0.0.0.0"
