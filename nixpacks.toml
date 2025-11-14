@@ -5,8 +5,9 @@ nixPkgs = ["python310", "python310Packages.pip", "python310Packages.virtualenv",
 cmds = [
     "python -m venv /opt/venv",
     ". /opt/venv/bin/activate && pip install -r app/requirements.txt",
-    ". /opt/venv/bin/activate && python app/setup_db.py"
+    ". /opt/venv/bin/activate && python app/setup_db.py",
+    "chmod +x start.sh"
 ]
 
 [start]
-cmd = "export LD_LIBRARY_PATH=$(find /nix/store -name 'libstdc++.so.6' -exec dirname {} \\; | head -n 1):$LD_LIBRARY_PATH && . /opt/venv/bin/activate && cd app && python serve.py --port $PORT --address 0.0.0.0"
+cmd = "./start.sh"
