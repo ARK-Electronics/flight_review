@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python310", "python310Packages.pip", "python310Packages.virtualenv", "gcc", "gpp", "fftw", "sqlite"]
+nixPkgs = ["python310", "python310Packages.pip", "python310Packages.virtualenv", "gcc", "gpp", "fftw", "sqlite", "stdenv.cc.cc.lib"]
 
 [phases.install]
 cmds = [
