@@ -8,5 +8,8 @@ cmds = [
     ". /opt/venv/bin/activate && python app/setup_db.py"
 ]
 
+[variables]
+LD_LIBRARY_PATH = "/nix/store/*-gcc-*/lib:$LD_LIBRARY_PATH"
+
 [start]
 cmd = ". /opt/venv/bin/activate && cd app && python serve.py --port $PORT --address 0.0.0.0"
