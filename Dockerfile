@@ -25,4 +25,6 @@ RUN python app/setup_db.py
 EXPOSE 8080
 
 # Start the application
-CMD cd app && python serve.py --port ${PORT:-8080} --address 0.0.0.0 --allow-websocket-origin=ark-flight-review-9cuak.kinsta.app
+CMD cd app && python serve.py --port ${PORT:-8080} --address 0.0.0.0 \
+    --allow-websocket-origin=ark-flight-review-9cuak.kinsta.app \
+    --host=ark-flight-review-9cuak.kinsta.app:443
