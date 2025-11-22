@@ -11,6 +11,7 @@ RUN apt-get	update && \
 	rm -rf /var/lib/apt/lists/*
 
 ENV STORAGE_PATH=/workspace/source/data
+ENV PYTHONUNBUFFERED=1
 RUN mkdir -p /workspace/source/data
 COPY [".", "/opt/service/"]
 

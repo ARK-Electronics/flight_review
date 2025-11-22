@@ -19,8 +19,10 @@ def send_notification_email(email_address, plot_url, delete_url, info):
     """ send a notification email after uploading a plot
         :param info: dictionary with additional info
     """
+    print(f"send_notification_email called with email: '{email_address}'", flush=True)
 
     if email_address == '':
+        print("Email address is empty, not sending notification.", flush=True)
         return True
 
     description = info['description']
@@ -111,19 +113,19 @@ def _send_email(destination, subject, content):
         sender = email_config['sender']
         msg['From'] = sender # some SMTP servers will do this automatically
 
-        print(f"Attempting to send email to {destination} via {email_config['smtpserver']}...")
+        print(f"Attempting to send email to {destination} via {email_config['smtpserver']}...", flush=True)
 
         conn = SMTP(email_config['smtpserver'], timeout=15)
         conn.set_debuglevel(False)
         conn.login(email_config['user_name'], email_config['password'])
         try:
             conn.sendmail(sender, destination, msg.as_string())
-            print(f"Email sent successfully to {destination}")
+            print(f"Email sent successfully to {destination}", flush=True)
         finally:
             conn.quit()
 
     except Exception as exc:
-        print(f"Mail failed to send to {destination}. Error: {str(exc)}")
-        print(f"SMTP Config: Server={email_config.get('smtpserver')}, User={email_config.get('user_name')}, Sender={email_config.get('sender')}")
+        print(f"Mail failed to send to {destination}. Error: {str(exc)}", flush=True)
+        print(f"SMTP Config: Server={email_config.get('smtpserver')}, User={email_config.get('user_name')}, Sender={email_config.get('sender')}", flush=True)
         return False
     return True
