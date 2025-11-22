@@ -111,15 +111,19 @@ def _send_email(destination, subject, content):
         sender = email_config['sender']
         msg['From'] = sender # some SMTP servers will do this automatically
 
+        print(f"Attempting to send email to {destination} via {email_config['smtpserver']}...")
+
         conn = SMTP(email_config['smtpserver'], timeout=15)
         conn.set_debuglevel(False)
         conn.login(email_config['user_name'], email_config['password'])
         try:
             conn.sendmail(sender, destination, msg.as_string())
+            print(f"Email sent successfully to {destination}")
         finally:
             conn.quit()
 
     except Exception as exc:
-        print("mail failed; {:}".format(str(exc)))
+        print(f"Mail failed to send to {destination}. Error: {str(exc)}")
+        print(f"SMTP Config: Server={email_config.get('smtpserver')}, User={email_config.get('user_name')}, Sender={email_config.get('sender')}")
         return False
     return True
