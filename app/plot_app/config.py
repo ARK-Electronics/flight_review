@@ -54,6 +54,9 @@ __STORAGE_PATH = os.environ.get('STORAGE_PATH', _conf.get('general', 'storage_pa
 if not os.path.isabs(__STORAGE_PATH):
     __STORAGE_PATH = os.path.join(_cur_dir, '..', __STORAGE_PATH)
 
+print(f"Config: STORAGE_PATH env var: '{os.environ.get('STORAGE_PATH')}'", flush=True)
+print(f"Config: Final __STORAGE_PATH: '{__STORAGE_PATH}'", flush=True)
+
 __LOG_FILE_PATH = os.path.join(__STORAGE_PATH, 'log_files')
 __DB_FILENAME = os.path.join(__STORAGE_PATH, 'logs.sqlite')
 __CACHE_FILE_PATH = os.path.join(__STORAGE_PATH, 'cache')

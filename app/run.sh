@@ -7,13 +7,25 @@ WORK_PATH=/opt/service
 DATA_PATH=${STORAGE_PATH:-/opt/data}
 
 # app setup
+echo "Starting run.sh..."
+echo "STORAGE_PATH is set to: '${STORAGE_PATH}'"
+echo "DATA_PATH is set to: '${DATA_PATH}'"
+
 if [ ! -d ${DATA_PATH} ]; then
+	echo "Creating DATA_PATH: ${DATA_PATH}"
 	mkdir -p ${DATA_PATH}
 fi
 
+echo "Listing contents of ${DATA_PATH}:"
+ls -la ${DATA_PATH}
+
 if [ ! -f ${DATA_PATH}/logs.sqlite ]; then
+	echo "Database not found at ${DATA_PATH}/logs.sqlite. Initializing..."
 	python3 ${WORK_PATH}/setup_db.py
+else
+	echo "Database found at ${DATA_PATH}/logs.sqlite"
 fi
+
 
 if [ -n "${USE_PROXY}" ]; then
 	echo "Use Proxy!"
