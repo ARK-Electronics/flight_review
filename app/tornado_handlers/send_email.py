@@ -3,11 +3,9 @@ from __future__ import print_function
 
 import sys
 import os
+import smtplib
+from smtplib import SMTP_SSL, SMTP
 
-from smtplib import SMTP_SSL as SMTP       # this invokes the secure SMTP protocol
-                                           # (port 465, uses SSL)
-# from smtplib import SMTP                  # use this for standard SMTP protocol
-                                           # (port 25, no encryption)
 from email.mime.text import MIMEText
 
 # this is needed for the following imports
@@ -115,8 +113,17 @@ def _send_email(destination, subject, content):
 
         print(f"Attempting to send email to {destination} via {email_config['smtpserver']}...", flush=True)
 
-        conn = SMTP(email_config['smtpserver'], timeout=15)
-        conn.set_debuglevel(False)
+        server = email_config['smtpserver']
+        port = int(email_config.get('smtpport', 465))
+
+        if port == 587:
+            conn = SMTP(server, port, timeout=15)
+            conn.set_debuglevel(False)
+            conn.starttls()
+        else:
+            conn = SMTP_SSL(server, port, timeout=15)
+            conn.set_debuglevel(False)
+
         conn.login(email_config['user_name'], email_config['password'])
         try:
             conn.sendmail(sender, destination, msg.as_string())
@@ -126,6 +133,6 @@ def _send_email(destination, subject, content):
 
     except Exception as exc:
         print(f"Mail failed to send to {destination}. Error: {str(exc)}", flush=True)
-        print(f"SMTP Config: Server={email_config.get('smtpserver')}, User={email_config.get('user_name')}, Sender={email_config.get('sender')}", flush=True)
+        print(f"SMTP Config: Server={email_config.get('smtpserver')}, Port={email_config.get('smtpport', 465)}, User={email_config.get('user_name')}, Sender={email_config.get('sender')}", flush=True)
         return False
     return True

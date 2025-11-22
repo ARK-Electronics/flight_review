@@ -32,6 +32,8 @@ if os.environ.get('SMTP_USER'):
     email_config['user_name'] = os.environ.get('SMTP_USER').strip()
 if os.environ.get('SMTP_PASSWORD'):
     email_config['password'] = os.environ.get('SMTP_PASSWORD').strip()
+if os.environ.get('SMTP_PORT'):
+    email_config['smtpport'] = os.environ.get('SMTP_PORT').strip()
 
 email_notifications_config = dict(_conf.items('email_notifications'))
 email_notifications_config['public_flightreport'] = \
