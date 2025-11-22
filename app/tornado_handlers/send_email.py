@@ -117,12 +117,12 @@ def _send_email(destination, subject, content):
         port = int(email_config.get('smtpport', 465))
 
         if port == 587:
-            conn = SMTP(server, port, timeout=15)
-            conn.set_debuglevel(False)
+            conn = SMTP(server, port, timeout=30)
+            conn.set_debuglevel(True)
             conn.starttls()
         else:
-            conn = SMTP_SSL(server, port, timeout=15)
-            conn.set_debuglevel(False)
+            conn = SMTP_SSL(server, port, timeout=30)
+            conn.set_debuglevel(True)
 
         conn.login(email_config['user_name'], email_config['password'])
         try:
