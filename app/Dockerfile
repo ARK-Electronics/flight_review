@@ -10,7 +10,8 @@ RUN apt-get	update && \
 	apt-get -y autoremove && \
 	rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /opt/service/data
+ENV STORAGE_PATH=/workspace/source/data
+RUN mkdir -p /workspace/source/data
 COPY [".", "/opt/service/"]
 
 WORKDIR /opt/service
