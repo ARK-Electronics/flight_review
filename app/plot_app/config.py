@@ -50,13 +50,7 @@ __CESIUM_ENABLE_BING_AERIAL = _conf.get('general', 'cesium_enable_bing_aerial')
 __LOG_CACHE_SIZE = int(_conf.get('general', 'log_cache_size'))
 __DB_FILENAME_CUSTOM = _conf.get('general', 'db_filename')
 
-__STORAGE_PATH = os.environ.get('STORAGE_PATH')
-if not __STORAGE_PATH:
-    if os.path.exists('/workspace/source/data'):
-        __STORAGE_PATH = '/workspace/source/data'
-    else:
-        __STORAGE_PATH = _conf.get('general', 'storage_path')
-
+__STORAGE_PATH = os.environ.get('STORAGE_PATH', _conf.get('general', 'storage_path'))
 if not os.path.isabs(__STORAGE_PATH):
     __STORAGE_PATH = os.path.join(_cur_dir, '..', __STORAGE_PATH)
 
