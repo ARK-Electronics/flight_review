@@ -19,9 +19,11 @@ if [ ! -d ${DATA_PATH} ]; then
 	mkdir -p ${DATA_PATH}
 fi
 
-if [ ! -f ${DATA_PATH}/logs.sqlite ]; then
-	python3 ${WORK_PATH}/setup_db.py
-fi
+# Ensure STORAGE_PATH is available to Python scripts
+export STORAGE_PATH="${DATA_PATH}"
+
+# Always run setup_db.py to ensure tables exist (it is idempotent)
+python3 ${WORK_PATH}/setup_db.py
 
 if [ -n "${USE_PROXY}" ]; then
 	echo "Use Proxy!"
