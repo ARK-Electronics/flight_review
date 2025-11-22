@@ -23,6 +23,15 @@ if os.path.exists(_user_config_file):
         _conf.read_file(f)
 
 email_config = dict(_conf.items('email'))
+# Allow overriding email config with environment variables
+if os.environ.get('SMTP_SERVER'):
+    email_config['smtpserver'] = os.environ.get('SMTP_SERVER')
+if os.environ.get('EMAIL_SENDER'):
+    email_config['sender'] = os.environ.get('EMAIL_SENDER')
+if os.environ.get('SMTP_USER'):
+    email_config['user_name'] = os.environ.get('SMTP_USER')
+if os.environ.get('SMTP_PASSWORD'):
+    email_config['password'] = os.environ.get('SMTP_PASSWORD')
 
 email_notifications_config = dict(_conf.items('email_notifications'))
 email_notifications_config['public_flightreport'] = \
