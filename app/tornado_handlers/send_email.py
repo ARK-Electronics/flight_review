@@ -116,16 +116,23 @@ def _send_email(destination, subject, content):
         server = email_config['smtpserver']
         port = int(email_config.get('smtpport', 465))
 
+        print(f"Connecting to {server}:{port}...", flush=True)
         if port == 587:
             conn = SMTP(server, port, timeout=30)
+            print("Connected. Setting debug level...", flush=True)
             conn.set_debuglevel(True)
+            print("Starting TLS...", flush=True)
             conn.starttls()
+            print("TLS started.", flush=True)
         else:
             conn = SMTP_SSL(server, port, timeout=30)
+            print("Connected (SSL). Setting debug level...", flush=True)
             conn.set_debuglevel(True)
 
+        print("Logging in...", flush=True)
         conn.login(email_config['user_name'], email_config['password'])
         try:
+            print("Sending mail...", flush=True)
             conn.sendmail(sender, destination, msg.as_string())
             print(f"Email sent successfully to {destination}", flush=True)
         finally:
