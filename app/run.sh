@@ -4,7 +4,15 @@ PORT_VALUE=${PORT:-5006}
 DOMAIN_VALUE=${DOMAIN:-*}
 
 WORK_PATH=/opt/service
-DATA_PATH=${STORAGE_PATH:-/opt/data}
+DATA_PATH=${STORAGE_PATH}
+
+if [ -z "${DATA_PATH}" ]; then
+    if [ -d "/workspace/source/data" ]; then
+        DATA_PATH="/workspace/source/data"
+    else
+        DATA_PATH="/opt/data"
+    fi
+fi
 
 # app setup
 if [ ! -d ${DATA_PATH} ]; then
