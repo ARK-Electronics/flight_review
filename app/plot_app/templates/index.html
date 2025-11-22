@@ -32,17 +32,36 @@
       var mymap = L.map('mapid').setView([pos_datas[0][0], pos_datas[0][1]],15);
       var mapboxAccessToken = '{{ mapbox_api_access_token }}';
 
+      var baseMaps = {};
+
+      var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      });
+      baseMaps["OpenStreetMap"] = osmLayer;
+
       if (mapboxAccessToken) {
-          L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}', {
+          var mapboxSatStreets = L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token={accessToken}', {
               attribution: 'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
-              id: 'mapbox.satellite',
-              accessToken: mapboxAccessToken
-          }).addTo(mymap);
+              accessToken: mapboxAccessToken,
+              tileSize: 512,
+              zoomOffset: -1
+          });
+          baseMaps["Mapbox Satellite Streets"] = mapboxSatStreets;
+
+          var mapboxOutdoors = L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token={accessToken}', {
+              attribution: 'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+              accessToken: mapboxAccessToken,
+              tileSize: 512,
+              zoomOffset: -1
+          });
+          baseMaps["Mapbox Outdoors"] = mapboxOutdoors;
+
+          mapboxSatStreets.addTo(mymap); // Default
       } else {
-          L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          }).addTo(mymap);
+          osmLayer.addTo(mymap); // Default if no token
       }
+
+      L.control.layers(baseMaps).addTo(mymap);
 
       for(var j=0; j<pos_flight_modes.length - 1; j++) {
         var offset = -1;
