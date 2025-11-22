@@ -4,6 +4,8 @@ from __future__ import print_function
 import sys
 import os
 import smtplib
+import requests
+import json
 from smtplib import SMTP_SSL, SMTP
 
 from email.mime.text import MIMEText
@@ -102,6 +104,10 @@ Use the following link to delete the log:
 def _send_email(destination, subject, content):
     """ common method for sending an email to one or more destinations """
 
+    # Check if SendLayer API Key is configured
+    if email_config.get('sendlayer_api_key'):
+        return _send_email_via_api(destination, subject, content)
+
     # typical values for text_subtype are plain, html, xml
     text_subtype = 'plain'
 
@@ -143,3 +149,47 @@ def _send_email(destination, subject, content):
         print(f"SMTP Config: Server={email_config.get('smtpserver')}, Port={email_config.get('smtpport', 465)}, User={email_config.get('user_name')}, Sender={email_config.get('sender')}", flush=True)
         return False
     return True
+
+
+def _send_email_via_api(destination, subject, content):
+    """ Send email using SendLayer REST API """
+    print(f"Attempting to send email to {destination} via SendLayer API...", flush=True)
+    
+    url = "https://console.sendlayer.com/api/v1/email"
+    api_key = email_config['sendlayer_api_key']
+    sender_email = email_config['sender']
+    
+    # Format recipients
+    to_list = [{"email": email, "name": email} for email in destination]
+    
+    payload = {
+        "From": {
+            "name": "Flight Review",
+            "email": sender_email
+        },
+        "To": to_list,
+        "Subject": subject,
+        "ContentType": "HTML", # Using HTML to support newlines properly if needed, but content is plain text
+        "HTMLContent": f"<html><body><pre>{content}</pre></body></html>",
+        "PlainContent": content
+    }
+    
+    headers = {
+        'Authorization': f'Bearer {api_key}',
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
+        
+        if response.status_code == 200:
+            print(f"Email sent successfully via API. Response: {response.text}", flush=True)
+            return True
+        else:
+            print(f"Failed to send email via API. Status: {response.status_code}, Response: {response.text}", flush=True)
+            return False
+            
+    except Exception as e:
+        print(f"Exception when sending email via API: {str(e)}", flush=True)
+        return False
+
