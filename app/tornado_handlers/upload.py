@@ -8,6 +8,7 @@ import json
 import os
 from html import escape
 import sys
+import traceback
 import uuid
 import binascii
 import sqlite3
@@ -340,6 +341,7 @@ class UploadHandler(TornadoRequestHandlerBase):
             except Exception as e:
                 print('Error when handling POST data', sys.exc_info()[0],
                       sys.exc_info()[1])
+                traceback.print_exc()
                 raise CustomHTTPError(500) from e
 
             finally:
