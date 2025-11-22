@@ -30,11 +30,19 @@
       var waypoint_bounds = [];
 
       var mymap = L.map('mapid').setView([pos_datas[0][0], pos_datas[0][1]],15);
-      L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}', {
-          attribution: 'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
-          id: 'mapbox.satellite',
-          accessToken: '{{ mapbox_api_access_token }}'
-      }).addTo(mymap);
+      var mapboxAccessToken = '{{ mapbox_api_access_token }}';
+
+      if (mapboxAccessToken) {
+          L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}', {
+              attribution: 'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+              id: 'mapbox.satellite',
+              accessToken: mapboxAccessToken
+          }).addTo(mymap);
+      } else {
+          L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          }).addTo(mymap);
+      }
 
       for(var j=0; j<pos_flight_modes.length - 1; j++) {
         var offset = -1;
