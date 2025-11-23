@@ -43,8 +43,8 @@ email_notifications_config['public_flightreport'] = \
 email_notifications_config['public_flightreport_bad'] = \
     [ s.strip() for s in email_notifications_config['public_flightreport_bad'].split(',') if s]
 
-__DOMAIN_NAME = _conf.get('general', 'domain_name')
-__HTTP_PROTOCOL = _conf.get('general', 'http_protocol')
+__DOMAIN_NAME = os.environ.get('DOMAIN_NAME', _conf.get('general', 'domain_name'))
+__HTTP_PROTOCOL = os.environ.get('HTTP_PROTOCOL', _conf.get('general', 'http_protocol'))
 __AIRFRAMES_URL = _conf.get('general', 'airframes_url')
 __PARAMETERS_URL = _conf.get('general', 'parameters_url')
 __EVENTS_URL = _conf.get('general', 'events_url')
