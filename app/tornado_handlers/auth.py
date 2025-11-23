@@ -5,7 +5,7 @@ import traceback
 from passlib.hash import bcrypt
 import tornado.web
 import uuid
-from .send_email import send_confirmation_email
+from .send_email import send_approval_email
 from config import get_domain_name, get_http_protocol
 
 # this is needed for the following imports
@@ -90,15 +90,16 @@ class RegisterHandler(TornadoRequestHandlerBase):
             if approved:
                 msg += "You can now login."
             else:
-                # Send confirmation email
+                # Send approval email to admin
                 protocol = get_http_protocol()
                 domain = get_domain_name()
-                confirm_url = f"{protocol}://{domain}/confirm_email?token={account_token}"
+                approve_url = f"{protocol}://{domain}/approve_user?token={account_token}"
                 
-                if send_confirmation_email(email, confirm_url):
-                    msg += "Please check your email to confirm your account."
+                admin_email = "logs@arkelectron.com"
+                if send_approval_email(admin_email, username, email, approve_url):
+                    msg += "Your account is pending approval. An administrator has been notified."
                 else:
-                    msg += "Registration successful, but failed to send confirmation email. Please contact support."
+                    msg += "Registration successful, but failed to notify administrator. Please contact support."
                 
             self.render_jinja('register.html', error=None, message=msg)
             
@@ -110,11 +111,11 @@ class RegisterHandler(TornadoRequestHandlerBase):
             if con:
                 con.close()
 
-class ConfirmEmailHandler(TornadoRequestHandlerBase):
+class ApproveUserHandler(TornadoRequestHandlerBase):
     def get(self):
         token = self.get_argument("token", None)
         if not token:
-            self.render_jinja('login.html', error="Invalid confirmation link.", next="/")
+            self.render_jinja('login.html', error="Invalid approval link.", next="/")
             return
 
         con = None
@@ -131,14 +132,14 @@ class ConfirmEmailHandler(TornadoRequestHandlerBase):
                 approved = row[1]
                 
                 if approved:
-                    self.render_jinja('login.html', error=None, message="Account already confirmed. Please login.", next="/")
+                    self.render_jinja('login.html', error=None, message=f"Account for {username} already approved.", next="/")
                 else:
-                    # Confirm the account
+                    # Approve the account
                     cur.execute("UPDATE Users SET Approved=1 WHERE Username=?", (username,))
                     con.commit()
-                    self.render_jinja('login.html', error=None, message="Account confirmed! You can now login.", next="/")
+                    self.render_jinja('login.html', error=None, message=f"Account for {username} approved successfully!", next="/")
             else:
-                self.render_jinja('login.html', error="Invalid or expired confirmation link.", next="/")
+                self.render_jinja('login.html', error="Invalid or expired approval link.", next="/")
                 
         except Exception:
             traceback.print_exc()

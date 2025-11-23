@@ -101,26 +101,25 @@ Use the following link to delete the log:
     return _send_email(destination, subject, content)
 
 
-def send_confirmation_email(email_address, confirmation_url):
-    """ send a confirmation email after registration """
-    print(f"send_confirmation_email called with email: '{email_address}'", flush=True)
+def send_approval_email(admin_email, username, user_email, approval_url):
+    """ send an approval email to admin after registration """
+    print(f"send_approval_email called with admin_email: '{admin_email}'", flush=True)
 
-    if email_address == '':
-        print("Email address is empty, not sending confirmation.", flush=True)
-        return False
-
-    subject = "Confirm your Flight Review Account"
+    subject = f"New User Registration: {username}"
     
     content = f"""\
-Hi there!
+Hello Admin,
 
-Please confirm your account by clicking the following link:
-{confirmation_url}
+A new user has registered on Flight Review.
 
-If you did not request this, please ignore this email.
+Username: {username}
+Email: {user_email}
+
+Please approve this account by clicking the following link:
+{approval_url}
 """
 
-    return _send_email([email_address], subject, content)
+    return _send_email([admin_email], subject, content)
 
 
 def _send_email(destination, subject, content):
