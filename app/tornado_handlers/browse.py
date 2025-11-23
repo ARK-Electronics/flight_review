@@ -10,6 +10,7 @@ from datetime import datetime
 import json
 import sqlite3
 import tornado.web
+import traceback
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
@@ -44,13 +45,25 @@ def format_duration(seconds: int) -> str:
     return f"{s}s"
 
 #pylint: disable=abstract-method
-class BrowseDataRetrievalHandler(tornado.web.RequestHandler):
+class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
     """ Ajax data retrieval handler """
 
-    @tornado.web.authenticated
+    def write_error(self, status_code, **kwargs):
+        self.set_header('Content-Type', 'application/json')
+        error_msg = "Unknown error"
+        if "exc_info" in kwargs:
+            error_msg = str(kwargs["exc_info"][1])
+        self.finish(json.dumps({"error": error_msg}))
+
     def get(self, *args, **kwargs):
         """ GET request """
+        if not self.current_user:
+            self.set_status(401)
+            self.finish(json.dumps({"error": "Unauthorized"}))
+            return
+
         search_str = self.get_argument('search[value]', '').lower()
+
         order_ind = int(self.get_argument('order[0][column]'))
         order_dir = self.get_argument('order[0][dir]', '').lower()
         data_start = int(self.get_argument('start'))
