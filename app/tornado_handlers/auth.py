@@ -12,8 +12,7 @@ from .common import TornadoRequestHandlerBase, get_jinja_env
 
 class LoginHandler(TornadoRequestHandlerBase):
     def get(self):
-        template = get_jinja_env().get_template('login.html')
-        self.write(template.render(error=None, next=self.get_argument("next", "/")))
+        self.render_jinja('login.html', error=None, next=self.get_argument("next", "/"))
 
     def post(self):
         username = self.get_argument("username")
@@ -35,12 +34,10 @@ class LoginHandler(TornadoRequestHandlerBase):
                     self.redirect(next_url)
                     return
                 else:
-                    template = get_jinja_env().get_template('login.html')
-                    self.write(template.render(error="Account pending approval.", next=next_url))
+                    self.render_jinja('login.html', error="Account pending approval.", next=next_url)
                     return
 
-        template = get_jinja_env().get_template('login.html')
-        self.write(template.render(error="Invalid username or password", next=next_url))
+        self.render_jinja('login.html', error="Invalid username or password", next=next_url)
 
 class LogoutHandler(TornadoRequestHandlerBase):
     def get(self):
@@ -49,8 +46,7 @@ class LogoutHandler(TornadoRequestHandlerBase):
 
 class RegisterHandler(TornadoRequestHandlerBase):
     def get(self):
-        template = get_jinja_env().get_template('register.html')
-        self.write(template.render(error=None, message=None))
+        self.render_jinja('register.html', error=None, message=None)
 
     def post(self):
         username = self.get_argument("username")
@@ -65,8 +61,7 @@ class RegisterHandler(TornadoRequestHandlerBase):
             # Check if user exists
             cur.execute("SELECT Username FROM Users WHERE Username=?", (username,))
             if cur.fetchone():
-                template = get_jinja_env().get_template('register.html')
-                self.write(template.render(error="Username already exists", message=None))
+                self.render_jinja('register.html', error="Username already exists", message=None)
                 return
 
             # Auto-approve the first user (admin)
@@ -84,11 +79,9 @@ class RegisterHandler(TornadoRequestHandlerBase):
             else:
                 msg += "Please wait for an administrator to approve your account."
                 
-            template = get_jinja_env().get_template('register.html')
-            self.write(template.render(error=None, message=msg))
+            self.render_jinja('register.html', error=None, message=msg)
             
         except Exception as e:
-            template = get_jinja_env().get_template('register.html')
-            self.write(template.render(error=f"Error: {str(e)}", message=None))
+            self.render_jinja('register.html', error=f"Error: {str(e)}", message=None)
         finally:
             con.close()

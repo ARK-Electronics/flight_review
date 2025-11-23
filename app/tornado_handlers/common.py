@@ -36,7 +36,15 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
     base class for a tornado request handler with custom error display
     """
     def get_current_user(self):
-        return self.get_secure_cookie("user")
+        user = self.get_secure_cookie("user")
+        if user:
+            return user.decode('utf-8')
+        return None
+
+    def render_jinja(self, template_name, **kwargs):
+        template = get_jinja_env().get_template(template_name)
+        kwargs['current_user'] = self.get_current_user()
+        self.write(template.render(**kwargs))
 
     def write_error(self, status_code, **kwargs):
         html_template = """

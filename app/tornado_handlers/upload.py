@@ -106,8 +106,25 @@ class UploadHandler(TornadoRequestHandlerBase):
 
     def get(self, *args, **kwargs):
         """ GET request callback """
-        template = get_jinja_env().get_template(UPLOAD_TEMPLATE)
-        self.write(template.render())
+        # check if the user wants to load a log directly
+        log_id = self.get_argument('log', default='')
+        if log_id != '':
+            # we need to redirect to the bokeh app
+            url = "/plot_app?log="+log_id
+            self.redirect(url)
+            return
+
+        initial_email = ''
+        # try to get the email from the cookie
+        try:
+            initial_email = self.get_cookie('email')
+            if initial_email is None: initial_email = ''
+        except: #pylint: disable=bare-except
+            pass
+
+        self.render_jinja(UPLOAD_TEMPLATE, error_message='',
+                                   initial_email=initial_email,
+                                   is_plot_page=False)
 
     def _generate_unique_log_filename(self):
         """Generate a unique log filename that does not exist yet."""

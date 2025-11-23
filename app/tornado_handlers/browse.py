@@ -18,7 +18,7 @@ from db_entry import DBData, DBDataGenerated
 from helper import flight_modes_table, get_airframe_data
 
 #pylint: disable=relative-beyond-top-level,too-many-statements
-from .common import get_jinja_env, get_generated_db_data_from_log
+from .common import get_jinja_env, get_generated_db_data_from_log, TornadoRequestHandlerBase
 
 BROWSE_TEMPLATE = 'browse.html'
 
@@ -309,18 +309,16 @@ class DBDataJoin(DBData, DBDataGenerated):
         self.__dict__.update(source.__dict__)
 
 
-class BrowseHandler(tornado.web.RequestHandler):
+class BrowseHandler(TornadoRequestHandlerBase):
     """ Browse public log file Tornado request handler """
 
     @tornado.web.authenticated
     def get(self, *args, **kwargs):
         """ GET request """
-        template = get_jinja_env().get_template(BROWSE_TEMPLATE)
-
         template_args = {}
 
         search_str = self.get_argument('search', '').lower()
         if len(search_str) > 0:
             template_args['initial_search'] = json.dumps(search_str)
 
-        self.write(template.render(template_args))
+        self.render_jinja(BROWSE_TEMPLATE, **template_args)
