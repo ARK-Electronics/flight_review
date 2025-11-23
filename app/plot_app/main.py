@@ -24,6 +24,15 @@ from statistics_plots import StatisticsPlots
 
 
 GET_arguments = curdoc().session_context.request.arguments
+
+# Get current user
+user = None
+if curdoc().session_context.request.user:
+    user = curdoc().session_context.request.user
+    if isinstance(user, bytes):
+        user = user.decode('utf-8')
+curdoc().template_variables['current_user'] = user
+
 if GET_arguments is not None and 'stats' in GET_arguments:
 
     # show the statistics page
