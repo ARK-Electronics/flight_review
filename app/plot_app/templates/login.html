@@ -11,6 +11,9 @@
                     {% if error %}
                     <div class="alert alert-danger">{{ error }}</div>
                     {% endif %}
+                    {% if message %}
+                    <div class="alert alert-success">{{ message }}</div>
+                    {% endif %}
                     <form method="post" action="/login">
                         <div class="form-group mb-3">
                             <label for="username">Username</label>

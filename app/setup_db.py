@@ -162,6 +162,9 @@ with con:
         if 'Approved' not in column_names:
             print('Adding column Approved to Users')
             cur.execute("ALTER TABLE Users ADD COLUMN Approved INTEGER DEFAULT 0")
+        if 'AccountToken' not in column_names:
+            print('Adding column AccountToken to Users')
+            cur.execute("ALTER TABLE Users ADD COLUMN AccountToken TEXT DEFAULT ''")
 
 con.close()
 

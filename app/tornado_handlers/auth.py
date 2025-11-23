@@ -1,10 +1,12 @@
-
 import sqlite3
 import os
 import sys
 import traceback
 from passlib.hash import bcrypt
 import tornado.web
+import uuid
+from .send_email import send_confirmation_email
+from config import get_domain_name, get_http_protocol
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
@@ -77,16 +79,26 @@ class RegisterHandler(TornadoRequestHandlerBase):
             cur.execute("SELECT COUNT(*) FROM Users")
             count = cur.fetchone()[0]
             approved = 1 if count == 0 else 0
+            
+            account_token = str(uuid.uuid4())
 
-            cur.execute("INSERT INTO Users (Username, PasswordHash, Email, Approved) VALUES (?, ?, ?, ?)",
-                        (username, password_hash, email, approved))
+            cur.execute("INSERT INTO Users (Username, PasswordHash, Email, Approved, AccountToken) VALUES (?, ?, ?, ?, ?)",
+                        (username, password_hash, email, approved, account_token))
             con.commit()
             
             msg = "Registration successful. "
             if approved:
                 msg += "You can now login."
             else:
-                msg += "Please wait for an administrator to approve your account."
+                # Send confirmation email
+                protocol = get_http_protocol()
+                domain = get_domain_name()
+                confirm_url = f"{protocol}://{domain}/confirm_email?token={account_token}"
+                
+                if send_confirmation_email(email, confirm_url):
+                    msg += "Please check your email to confirm your account."
+                else:
+                    msg += "Registration successful, but failed to send confirmation email. Please contact support."
                 
             self.render_jinja('register.html', error=None, message=msg)
             
@@ -94,6 +106,43 @@ class RegisterHandler(TornadoRequestHandlerBase):
             print("Error during registration:", flush=True)
             traceback.print_exc()
             self.render_jinja('register.html', error=f"Error: {str(e)}", message=None)
+        finally:
+            if con:
+                con.close()
+
+class ConfirmEmailHandler(TornadoRequestHandlerBase):
+    def get(self):
+        token = self.get_argument("token", None)
+        if not token:
+            self.render_jinja('login.html', error="Invalid confirmation link.", next="/")
+            return
+
+        con = None
+        try:
+            con = sqlite3.connect(get_db_filename())
+            cur = con.cursor()
+            
+            # Find user with this token
+            cur.execute("SELECT Username, Approved FROM Users WHERE AccountToken=?", (token,))
+            row = cur.fetchone()
+            
+            if row:
+                username = row[0]
+                approved = row[1]
+                
+                if approved:
+                    self.render_jinja('login.html', error=None, message="Account already confirmed. Please login.", next="/")
+                else:
+                    # Confirm the account
+                    cur.execute("UPDATE Users SET Approved=1 WHERE Username=?", (username,))
+                    con.commit()
+                    self.render_jinja('login.html', error=None, message="Account confirmed! You can now login.", next="/")
+            else:
+                self.render_jinja('login.html', error="Invalid or expired confirmation link.", next="/")
+                
+        except Exception:
+            traceback.print_exc()
+            self.write_error(500)
         finally:
             if con:
                 con.close()
