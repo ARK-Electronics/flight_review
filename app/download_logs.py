@@ -28,9 +28,9 @@ def get_arguments():
                         help='Whether to only print (not download) the database entries.')
     parser.add_argument('--overwrite', action='store_true', default=False,
                         help='Whether to overwrite already existing files in download folder.')
-    parser.add_argument('--db-info-api', type=str, default="https://review.px4.io/dbinfo",
+    parser.add_argument('--db-info-api', type=str, default="https://review.arkelectron.com/dbinfo",
                         help='The url at which the server provides the dbinfo API.')
-    parser.add_argument('--download-api', type=str, default="https://review.px4.io/download",
+    parser.add_argument('--download-api', type=str, default="https://review.arkelectron.com/download",
                         help='The url at which the server provides the download API.')
     parser.add_argument('--mav-type', type=str, default=None, nargs='+',
                         help='Filter logs by mav type (case insensitive). Specifying multiple '

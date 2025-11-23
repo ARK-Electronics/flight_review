@@ -30,7 +30,7 @@ from tornado_handlers.error_labels import UpdateErrorLabelHandler
 from tornado_handlers.auth import LoginHandler, LogoutHandler, RegisterHandler, ConfirmEmailHandler
 
 from helper import set_log_id_is_filename, print_cache_info #pylint: disable=C0411
-from config import debug_print_timing, get_overview_img_filepath #pylint: disable=C0411
+from config import debug_print_timing, get_overview_img_filepath, get_domain_name #pylint: disable=C0411
 
 #pylint: disable=invalid-name
 
@@ -92,6 +92,19 @@ if args.address is not None: server_kwargs['address'] = args.address
 if args.host is not None: server_kwargs['host'] = args.host
 if args.allow_websocket_origin is not None:
     server_kwargs['allow_websocket_origin'] = args.allow_websocket_origin
+else:
+    server_kwargs['allow_websocket_origin'] = []
+
+# Add configured domain to allowed origins
+configured_domain = get_domain_name()
+if configured_domain:
+    server_kwargs['allow_websocket_origin'].append(configured_domain)
+    server_kwargs['allow_websocket_origin'].append(configured_domain + ":80")
+    server_kwargs['allow_websocket_origin'].append(configured_domain + ":443")
+
+# Deduplicate
+server_kwargs['allow_websocket_origin'] = list(set(server_kwargs['allow_websocket_origin']))
+
 server_kwargs['websocket_max_message_size'] = 100 * 1024 * 1024
 
 # increase the maximum upload size (default is 100MB)

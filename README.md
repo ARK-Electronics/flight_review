@@ -6,7 +6,7 @@ ULog flight logs, and analyze them through the browser.
 It uses the [bokeh](http://bokeh.pydata.org) library for plotting and the
 [Tornado Web Server](http://www.tornadoweb.org).
 
-Flight Review is deployed at https://review.px4.io.
+Flight Review is deployed at https://review.arkelectron.com.
 
 ![Plot View](screenshots/plot_view.png)
 
