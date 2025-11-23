@@ -90,6 +90,9 @@ with con:
         if not 'Token' in column_names:
             print('Adding column Token')
             cur.execute("ALTER TABLE Logs ADD COLUMN Token TEXT DEFAULT ''")
+        if not 'Uploader' in column_names:
+            print('Adding column Uploader')
+            cur.execute("ALTER TABLE Logs ADD COLUMN Uploader TEXT DEFAULT ''")
 
 
     # LogsGenerated table (information from the log file, for faster access)

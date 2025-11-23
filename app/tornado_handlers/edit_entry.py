@@ -14,14 +14,14 @@ from config import get_db_filename, get_kml_filepath, get_overview_img_filepath
 from helper import clear_ulog_cache, get_log_filename
 
 #pylint: disable=relative-beyond-top-level
-from .common import get_jinja_env
+from .common import get_jinja_env, TornadoRequestHandlerBase
 
 EDIT_TEMPLATE = 'edit.html'
 
 #pylint: disable=abstract-method
 
 
-class EditEntryHandler(tornado.web.RequestHandler):
+class EditEntryHandler(TornadoRequestHandlerBase):
     """ Edit a log entry, with confirmation (currently only delete) """
 
     def get(self, *args, **kwargs):
@@ -29,11 +29,11 @@ class EditEntryHandler(tornado.web.RequestHandler):
         log_id = escape(self.get_argument('log'))
         action = self.get_argument('action')
         confirmed = self.get_argument('confirm', default='0')
-        token = escape(self.get_argument('token'))
+        token = escape(self.get_argument('token', default=''))
 
         if action == 'delete':
             if confirmed == '1':
-                if self.delete_log_entry(log_id, token):
+                if self.delete_log_entry(log_id, token, self.current_user):
                     content = """
 <h3>Log File deleted</h3>
 <p>
@@ -65,7 +65,7 @@ Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
 
 
     @staticmethod
-    def delete_log_entry(log_id, token):
+    def delete_log_entry(log_id, token, user=None):
         """
         delete a log entry (DB & file), validate token first
 
@@ -73,11 +73,21 @@ Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
         """
         con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
         cur = con.cursor()
-        cur.execute('select Token from Logs where Id = ?', (log_id,))
+        cur.execute('select Token, Uploader from Logs where Id = ?', (log_id,))
         db_tuple = cur.fetchone()
         if db_tuple is None:
             return False
-        if token != db_tuple[0]: # validate token
+        
+        db_token = db_tuple[0]
+        db_uploader = db_tuple[1]
+        
+        authorized = False
+        if token and token == db_token:
+            authorized = True
+        elif user:
+            authorized = True
+            
+        if not authorized:
             return False
 
         # kml file

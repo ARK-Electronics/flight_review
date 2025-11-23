@@ -176,6 +176,10 @@ class UploadHandler(TornadoRequestHandlerBase):
                 is_public = 0
                 vehicle_name = ''
                 error_labels = ''
+                
+                uploader_username = ''
+                if self.current_user:
+                    uploader_username = self.current_user
 
                 if upload_type == 'flightreport':
                     if 'windSpeed' in form_data:
@@ -259,12 +263,12 @@ class UploadHandler(TornadoRequestHandlerBase):
                     'insert into Logs (Id, Title, Description, '
                     'OriginalFilename, Date, AllowForAnalysis, Obfuscated, '
                     'Source, Email, WindSpeed, Rating, Feedback, Type, '
-                    'videoUrl, ErrorLabels, Public, Token) values '
-                    '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    'videoUrl, ErrorLabels, Public, Token, Uploader) values '
+                    '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     [log_id, title, description, upload_file_name,
                      datetime.datetime.now(), allow_for_analysis,
                      obfuscated, source, stored_email, wind_speed, rating,
-                     feedback, upload_type, video_url, error_labels, is_public, token])
+                     feedback, upload_type, video_url, error_labels, is_public, token, uploader_username])
 
                 if ulog is not None:
                     vehicle_data = update_vehicle_db_entry(cur, ulog, log_id, vehicle_name)

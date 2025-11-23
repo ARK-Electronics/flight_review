@@ -21,6 +21,7 @@ class DBData:
         self.video_url = ''
         self.error_labels = []
         self.source = ''
+        self.uploader = ''
 
         super().__init__()
 

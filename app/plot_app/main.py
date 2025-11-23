@@ -151,7 +151,7 @@ else:
             con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
             cur = con.cursor()
             cur.execute('select Description, Feedback, Type, WindSpeed, Rating, VideoUrl, '
-                        'ErrorLabels from Logs where Id = ?', [log_id])
+                        'ErrorLabels, Uploader from Logs where Id = ?', [log_id])
             db_tuple = cur.fetchone()
             if db_tuple is not None:
                 db_data.description = db_tuple[0]
@@ -163,6 +163,7 @@ else:
                 db_data.error_labels = sorted(
                     [int(x) for x in db_tuple[6].split(',') if len(x) > 0]) \
                     if db_tuple[6] else []
+                db_data.uploader = db_tuple[7]
 
             # vehicle data
             if 'sys_uuid' in ulog.msg_info_dict:
@@ -227,6 +228,7 @@ else:
             curdoc().template_variables['mapbox_api_access_token'] = get_mapbox_api_access_token()
             curdoc().template_variables['is_plot_page'] = True
             curdoc().template_variables['log_id'] = log_id
+            curdoc().template_variables['log_uploader'] = db_data.uploader
             flight_modes = [
                 {'name': 'Manual', 'color': HTML_color_to_RGB(flight_modes_table[0][1])},
                 {'name': 'Altitude Control', 'color': HTML_color_to_RGB(flight_modes_table[1][1])},
