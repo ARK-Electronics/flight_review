@@ -35,6 +35,9 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
     """
     base class for a tornado request handler with custom error display
     """
+    def get_current_user(self):
+        return self.get_secure_cookie("user")
+
     def write_error(self, status_code, **kwargs):
         html_template = """
 <html><title>Error {status_code}</title>

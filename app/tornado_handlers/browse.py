@@ -47,6 +47,7 @@ def format_duration(seconds: int) -> str:
 class BrowseDataRetrievalHandler(tornado.web.RequestHandler):
     """ Ajax data retrieval handler """
 
+    @tornado.web.authenticated
     def get(self, *args, **kwargs):
         """ GET request """
         search_str = self.get_argument('search[value]', '').lower()
@@ -311,6 +312,7 @@ class DBDataJoin(DBData, DBDataGenerated):
 class BrowseHandler(tornado.web.RequestHandler):
     """ Browse public log file Tornado request handler """
 
+    @tornado.web.authenticated
     def get(self, *args, **kwargs):
         """ GET request """
         template = get_jinja_env().get_template(BROWSE_TEMPLATE)

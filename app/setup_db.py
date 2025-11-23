@@ -144,5 +144,24 @@ with con:
                 "FlightTime INTEGER, " # latest flight time in seconds
                 "CONSTRAINT UUID_PK PRIMARY KEY (UUID))")
 
+    # Users table
+    cur.execute("PRAGMA table_info('Users')")
+    columns = cur.fetchall()
+
+    if len(columns) == 0:
+        print("Creating Users table")
+        cur.execute("CREATE TABLE Users("
+                "Username TEXT, "
+                "PasswordHash TEXT, "
+                "Email TEXT, "
+                "Approved INTEGER DEFAULT 0, "
+                "CONSTRAINT Username_PK PRIMARY KEY (Username))")
+    else:
+        # Check for Approved column
+        column_names = [x[1] for x in columns]
+        if 'Approved' not in column_names:
+            print('Adding column Approved to Users')
+            cur.execute("ALTER TABLE Users ADD COLUMN Approved INTEGER DEFAULT 0")
+
 con.close()
 

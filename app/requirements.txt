@@ -9,3 +9,5 @@ scipy>=1.8.1
 simplekml
 smopy
 pycryptodome>=3.18
+passlib
+bcrypt

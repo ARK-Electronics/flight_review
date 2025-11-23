@@ -27,6 +27,7 @@ from tornado_handlers.db_info_json import DBInfoHandler
 from tornado_handlers.three_d import ThreeDHandler
 from tornado_handlers.radio_controller import RadioControllerHandler
 from tornado_handlers.error_labels import UpdateErrorLabelHandler
+from tornado_handlers.auth import LoginHandler, LogoutHandler, RegisterHandler
 
 from helper import set_log_id_is_filename, print_cache_info #pylint: disable=C0411
 from config import debug_print_timing, get_overview_img_filepath #pylint: disable=C0411
@@ -64,7 +65,7 @@ parser.add_argument('--port', type=int, action='store',
 parser.add_argument('--address', action='store',
                     help='Network address to listen to', default=None)
 parser.add_argument('--host', action='append', type=str, metavar='HOST[:PORT]',
-                    help="""Hosts whitelist, that must match the Host header in new
+                    help=""" Hosts whitelist, that must match the Host header in new
                     requests. It has the form <host>[:<port>]. If no port is specified, 80
                     is used. You should use the DNS name of the public endpoint here. \'*\'
                     matches all hosts (for testing only) (default=localhost)""",
@@ -123,15 +124,36 @@ extra_patterns = [
     (r'/download', DownloadHandler),
     (r'/dbinfo', DBInfoHandler),
     (r'/error_label', UpdateErrorLabelHandler),
+    (r'/login', LoginHandler),
+    (r'/logout', LogoutHandler),
+    (r'/register', RegisterHandler),
     (r"/stats", RedirectHandler, {"url": "/plot_app?stats=1"}),
     (r'/overview_img/(.*)', StaticFileHandler, {'path': get_overview_img_filepath()}),
 ]
 
 server = None
 custom_port = 5006
+
+# Bokeh Auth Provider
+from bokeh.server.auth_provider import AuthProvider
+class FlightReviewAuthProvider(AuthProvider):
+    def get_user(self, request_handler):
+        return request_handler.get_secure_cookie("user")
+
+    @property
+    def login_url(self):
+        return "/login"
+
 while server is None:
     try:
+        # Configure Authentication
+        server_kwargs['auth_provider'] = FlightReviewAuthProvider()
+        
         server = Server(applications, extra_patterns=extra_patterns, **server_kwargs)
+        
+        server._tornado.settings['cookie_secret'] = os.environ.get('COOKIE_SECRET', 'change_me_to_a_random_string')
+        server._tornado.settings['login_url'] = '/login'
+        
     except OSError as e:
         # if we get a port bind error and running locally with '-f',
         # automatically select another port (useful for opening multiple logs)

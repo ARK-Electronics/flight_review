@@ -26,13 +26,12 @@ from .common import CustomHTTPError, TornadoRequestHandlerBase
 #pylint: disable=abstract-method, unused-argument
 
 class DownloadHandler(TornadoRequestHandlerBase):
-    """ Download log file Tornado request handler """
-
-    def get(self, *args, **kwargs):
-        """ GET request callback """
+    """
+    Handler for downloading a log file
+    """
+    @tornado.web.authenticated
+    def get(self):
         log_id = self.get_argument('log')
-        if not validate_log_id(log_id):
-            raise tornado.web.HTTPError(400, 'Invalid Parameter')
         log_file_name = get_log_filename(log_id)
         download_type = self.get_argument('type', default='0')
         if not os.path.exists(log_file_name):
