@@ -12,7 +12,7 @@ from email.mime.text import MIMEText
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plot_app'))
-from config import *
+from config import email_config, email_notifications_config
 
 
 def send_notification_email(email_address, plot_url, delete_url, info):
@@ -120,66 +120,7 @@ Please confirm your account by clicking the following link:
 If you did not request this, please ignore this email.
 """
 
-    msg = MIMEText(content, 'plain', 'utf-8')
-    msg['Subject'] = subject
-    msg['From'] = email_config['sender']
-    msg['To'] = email_address
-
-    try:
-        if email_config.get('smtpserver'):
-            s = SMTP(email_config['smtpserver'], int(email_config.get('smtpport', 465)))
-            if email_config.get('use_tls', False): # Assuming use_tls might be added or default to False/True depending on port
-                 # Standard smtplib usage: 465 is usually SSL, 587 is STARTTLS.
-                 # The existing code (which I haven't seen fully) might handle this.
-                 # Let's look at how existing code does it.
-                 pass
-            
-            # Re-reading existing code logic for SMTP
-            # The config says "Will use SSL, port 465"
-            # So maybe I should use SMTP_SSL if port is 465?
-            
-            if int(email_config.get('smtpport', 465)) == 465:
-                s = SMTP_SSL(email_config['smtpserver'], int(email_config.get('smtpport', 465)))
-            else:
-                s = SMTP(email_config['smtpserver'], int(email_config.get('smtpport', 587)))
-                s.starttls()
-
-            if email_config.get('user_name'):
-                s.login(email_config['user_name'], email_config['password'])
-            s.send_message(msg)
-            s.quit()
-        elif email_config.get('sendlayer_api_key'):
-            # Use SendLayer API
-            url = "https://console.sendlayer.com/api/v1/email"
-            payload = json.dumps({
-                "from": {
-                    "name": "Flight Review",
-                    "email": email_config['sender']
-                },
-                "to": [
-                    {
-                        "name": email_address,
-                        "email": email_address
-                    }
-                ],
-                "subject": subject,
-                "plain_text_body": content
-            })
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {email_config["sendlayer_api_key"]}'
-            }
-            response = requests.request("POST", url, headers=headers, data=payload)
-            print(f"SendLayer API response: {response.text}", flush=True)
-        else:
-             print("No email configuration found (SMTP or SendLayer).", flush=True)
-             return False
-
-    except Exception as e:
-        print(f"Error sending email: {e}", flush=True)
-        return False
-
-    return True
+    return _send_email([email_address], subject, content)
 
 
 def _send_email(destination, subject, content):
