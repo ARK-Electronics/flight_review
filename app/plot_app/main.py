@@ -20,6 +20,8 @@ from configured_plots import generate_plots
 from pid_analysis_plots import get_pid_analysis_plots
 from statistics_plots import StatisticsPlots
 
+import tornado.web
+
 #pylint: disable=invalid-name, redefined-outer-name
 
 
@@ -27,10 +29,21 @@ GET_arguments = curdoc().session_context.request.arguments
 
 # Get current user
 user = None
-if curdoc().session_context.request.user:
-    user = curdoc().session_context.request.user
-    if isinstance(user, bytes):
-        user = user.decode('utf-8')
+try:
+    request = curdoc().session_context.request
+    if hasattr(request, 'cookies') and 'user' in request.cookies:
+        cookie_val = request.cookies['user']
+        # Handle Morsel object if necessary
+        if hasattr(cookie_val, 'value'):
+            cookie_val = cookie_val.value
+
+        secret = os.environ.get('COOKIE_SECRET', 'change_me_to_a_random_string')
+        user = tornado.web.decode_signed_value(secret, 'user', cookie_val)
+        if user:
+            user = user.decode('utf-8')
+except Exception:
+    pass
+
 curdoc().template_variables['current_user'] = user
 
 if GET_arguments is not None and 'stats' in GET_arguments:
