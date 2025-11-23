@@ -35,7 +35,8 @@ h1 .name {
 }
 
 .bg-blue {
-    background-color: #06465c !important;
+    background-color: #4D4D4D !important; /* ARK Dark Grey */
+    border-bottom: 3px solid #00BB31; /* ARK Green */
 }
 
 /* bootstrap buttons */
