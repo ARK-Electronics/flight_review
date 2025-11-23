@@ -2,6 +2,7 @@
 import sqlite3
 import os
 import sys
+import traceback
 from passlib.hash import bcrypt
 import tornado.web
 
@@ -15,29 +16,33 @@ class LoginHandler(TornadoRequestHandlerBase):
         self.render_jinja('login.html', error=None, next=self.get_argument("next", "/"))
 
     def post(self):
-        username = self.get_argument("username")
-        password = self.get_argument("password")
-        next_url = self.get_argument("next", "/")
+        try:
+            username = self.get_argument("username")
+            password = self.get_argument("password")
+            next_url = self.get_argument("next", "/")
 
-        con = sqlite3.connect(get_db_filename())
-        cur = con.cursor()
-        cur.execute("SELECT PasswordHash, Approved FROM Users WHERE Username=?", (username,))
-        row = cur.fetchone()
-        con.close()
+            con = sqlite3.connect(get_db_filename())
+            cur = con.cursor()
+            cur.execute("SELECT PasswordHash, Approved FROM Users WHERE Username=?", (username,))
+            row = cur.fetchone()
+            con.close()
 
-        if row:
-            password_hash = row[0]
-            approved = row[1]
-            if bcrypt.verify(password, password_hash):
-                if approved:
-                    self.set_secure_cookie("user", username)
-                    self.redirect(next_url)
-                    return
-                else:
-                    self.render_jinja('login.html', error="Account pending approval.", next=next_url)
-                    return
+            if row:
+                password_hash = row[0]
+                approved = row[1]
+                if bcrypt.verify(password, password_hash):
+                    if approved:
+                        self.set_secure_cookie("user", username)
+                        self.redirect(next_url)
+                        return
+                    else:
+                        self.render_jinja('login.html', error="Account pending approval.", next=next_url)
+                        return
 
-        self.render_jinja('login.html', error="Invalid username or password", next=next_url)
+            self.render_jinja('login.html', error="Invalid username or password", next=next_url)
+        except Exception:
+            traceback.print_exc()
+            self.write_error(500)
 
 class LogoutHandler(TornadoRequestHandlerBase):
     def get(self):
@@ -49,15 +54,19 @@ class RegisterHandler(TornadoRequestHandlerBase):
         self.render_jinja('register.html', error=None, message=None)
 
     def post(self):
-        username = self.get_argument("username")
-        password = self.get_argument("password")
-        email = self.get_argument("email")
-
-        password_hash = bcrypt.hash(password)
-
-        con = sqlite3.connect(get_db_filename())
-        cur = con.cursor()
+        con = None
         try:
+            username = self.get_argument("username")
+            password = self.get_argument("password")
+            email = self.get_argument("email")
+
+            print(f"Registering user: {username}, email: {email}", flush=True)
+
+            password_hash = bcrypt.hash(password)
+
+            con = sqlite3.connect(get_db_filename())
+            cur = con.cursor()
+            
             # Check if user exists
             cur.execute("SELECT Username FROM Users WHERE Username=?", (username,))
             if cur.fetchone():
@@ -82,6 +91,9 @@ class RegisterHandler(TornadoRequestHandlerBase):
             self.render_jinja('register.html', error=None, message=msg)
             
         except Exception as e:
+            print("Error during registration:", flush=True)
+            traceback.print_exc()
             self.render_jinja('register.html', error=f"Error: {str(e)}", message=None)
         finally:
-            con.close()
+            if con:
+                con.close()
