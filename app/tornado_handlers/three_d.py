@@ -24,6 +24,7 @@ THREED_TEMPLATE = '3d.html'
 class ThreeDHandler(TornadoRequestHandlerBase):
     """ Tornado Request Handler to render the 3D Cesium.js page """
 
+    @tornado.web.authenticated
     def get(self, *args, **kwargs):
         """ GET request callback """
 
