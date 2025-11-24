@@ -122,6 +122,24 @@ Please approve this account by clicking the following link:
     return _send_email([admin_email], subject, content)
 
 
+def send_account_approved_email(user_email, username, login_url):
+    """ send an email to user after account approval """
+    print(f"send_account_approved_email called with user_email: '{user_email}'", flush=True)
+
+    subject = "Flight Review Account Approved"
+    
+    content = f"""\
+Hello {username},
+
+Your account on Flight Review has been approved!
+
+You can now login here:
+{login_url}
+"""
+
+    return _send_email([user_email], subject, content)
+
+
 def _send_email(destination, subject, content):
     """ common method for sending an email to one or more destinations """
 

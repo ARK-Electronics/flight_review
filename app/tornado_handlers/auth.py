@@ -5,7 +5,7 @@ import traceback
 from passlib.hash import bcrypt
 import tornado.web
 import uuid
-from .send_email import send_approval_email
+from .send_email import send_approval_email, send_account_approved_email
 from config import get_domain_name, get_http_protocol
 
 # this is needed for the following imports
@@ -124,12 +124,13 @@ class ApproveUserHandler(TornadoRequestHandlerBase):
             cur = con.cursor()
             
             # Find user with this token
-            cur.execute("SELECT Username, Approved FROM Users WHERE AccountToken=?", (token,))
+            cur.execute("SELECT Username, Approved, Email FROM Users WHERE AccountToken=?", (token,))
             row = cur.fetchone()
             
             if row:
                 username = row[0]
                 approved = row[1]
+                email = row[2]
                 
                 if approved:
                     self.render_jinja('login.html', error=None, message=f"Account for {username} already approved.", next="/")
@@ -137,6 +138,13 @@ class ApproveUserHandler(TornadoRequestHandlerBase):
                     # Approve the account
                     cur.execute("UPDATE Users SET Approved=1 WHERE Username=?", (username,))
                     con.commit()
+                    
+                    # Send approval notification to user
+                    protocol = get_http_protocol()
+                    domain = get_domain_name()
+                    login_url = f"{protocol}://{domain}/login"
+                    send_account_approved_email(email, username, login_url)
+                    
                     self.render_jinja('login.html', error=None, message=f"Account for {username} approved successfully!", next="/")
             else:
                 self.render_jinja('login.html', error="Invalid or expired approval link.", next="/")
