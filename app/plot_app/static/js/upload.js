@@ -99,7 +99,7 @@ $(function() { // on startup
                 return xhr;
             },
             type: 'POST',
-            url: '/upload?expected_size=' + (file_size + 1024 * 1024),
+            url: '/upload',
             data: form_data,
             cache: false,
             contentType: false,

@@ -108,7 +108,10 @@ server_kwargs['allow_websocket_origin'] = list(set(server_kwargs['allow_websocke
 server_kwargs['websocket_max_message_size'] = 100 * 1024 * 1024
 
 # increase the maximum upload size (default is 100MB)
-server_kwargs['http_server_kwargs'] = {'max_buffer_size': 500 * 1024 * 1024}
+server_kwargs['http_server_kwargs'] = {
+    'max_buffer_size': 500 * 1024 * 1024,
+    'max_body_size': 500 * 1024 * 1024
+}
 
 
 show_ulog_file = False
