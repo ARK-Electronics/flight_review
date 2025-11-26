@@ -95,12 +95,6 @@ class UploadHandler(TornadoRequestHandlerBase):
             except KeyError:
                 total = 0
             
-            if total > 0:
-                self.request.connection.set_max_body_size(total)
-            elif 'expected_size' in self.request.arguments:
-                self.request.connection.set_max_body_size(
-                    int(self.get_argument('expected_size')))
-            
             self.multipart_streamer = MultiPartStreamer(total)
 
     def data_received(self, chunk):
