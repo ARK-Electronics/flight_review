@@ -1,4 +1,3 @@
-
 function restoreSetting(key) {
 	var value = localStorage.getItem(key);
 	if (value !== null) {
@@ -85,6 +84,8 @@ $(function() { // on startup
         var upload_button = $('#upload-button');
         upload_button.hide();
 
+        var file_size = document.getElementById('file').files[0].size;
+
         $.ajax({
             xhr: function () {
                 var xhr = new window.XMLHttpRequest();
@@ -98,7 +99,7 @@ $(function() { // on startup
                 return xhr;
             },
             type: 'POST',
-            url: '/upload',
+            url: '/upload?expected_size=' + (file_size + 1024 * 1024),
             data: form_data,
             cache: false,
             contentType: false,
