@@ -69,9 +69,7 @@ def add_virtual_fifo_topic_data(ulog, topic_name, instance=0):
         dt = cur_dataset.data['dt']
         samples = cur_dataset.data['samples']
         scale = cur_dataset.data['scale']
-        total_samples = 0
-        for i in range(len(t)):
-            total_samples += samples[i]
+        total_samples = int(np.sum(samples))
         t_new = np.zeros(total_samples, t.dtype)
         xyz_new = [np.zeros(total_samples, np.float64) for i in range(3)]
         sample = 0
