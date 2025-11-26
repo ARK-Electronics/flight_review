@@ -220,8 +220,8 @@ class MultiPartStreamer:
     """
     SEP = b"\r\n"  # line separator in multipart/form-data
     L_SEP = len(SEP)
-    PAT_HEADER_VALUE = re.compile(r"""([^:]+):\s+([^\s;]+)(.*)""")
-    PAT_HEADER_PARAMS = re.compile(r""";\s*([^=]+)=\"(.*?)\"(.*)""")
+    PAT_HEADER_VALUE = re.compile(r"""([^:]+):\s*([^\s;]+)(.*)""")
+    PAT_HEADER_PARAMS = re.compile(r""";\s*([^=]+)=(?:\"(.*?)\"|([^\s;]+))(.*)""")
 
     # Encoding for the header values. Only header name and parameters
     # will be decoded. Streamed data will remain binary.
@@ -279,8 +279,8 @@ class MultiPartStreamer:
                 res = self.PAT_HEADER_PARAMS.match(tail)
                 if not res:
                     break
-                hdr_name, hdr_value, tail = res.groups()
-                params[hdr_name] = hdr_value
+                hdr_name, val_quoted, val_unquoted, tail = res.groups()
+                params[hdr_name] = val_quoted if val_quoted is not None else val_unquoted
             return hdr
         return {"value": header}
 

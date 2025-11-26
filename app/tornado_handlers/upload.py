@@ -202,7 +202,13 @@ class UploadHandler(TornadoRequestHandlerBase):
                         if form_data['public'].decode("utf-8") == 'true':
                             is_public = 1
 
-                file_obj = self.multipart_streamer.get_parts_by_name('filearg')[0]
+                parts = self.multipart_streamer.get_parts_by_name('filearg')
+                if not parts:
+                    # Log available parts for debugging
+                    all_parts = [p.get_name() for p in self.multipart_streamer.parts]
+                    print(f"Upload failed: 'filearg' not found. Available parts: {all_parts}")
+                    raise CustomHTTPError(400, "No file uploaded")
+                file_obj = parts[0]
                 upload_file_name = file_obj.get_filename()
 
                 # check if the file is encrypted
