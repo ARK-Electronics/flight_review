@@ -133,7 +133,7 @@ class UploadHandler(TornadoRequestHandlerBase):
                 return log_id, new_file_name
 
 
-    def post(self, *args, **kwargs):
+    async def post(self, *args, **kwargs):
         """ POST request callback """
         if self.multipart_streamer:
             try:
@@ -258,7 +258,8 @@ class UploadHandler(TornadoRequestHandlerBase):
                 ulog = None
                 if source != 'CI':
                     ulog_file_name = get_log_filename(log_id)
-                    ulog = load_ulog_file(ulog_file_name)
+                    # Run heavy parsing in a separate thread to avoid blocking the event loop
+                    ulog = await IOLoop.current().run_in_executor(None, load_ulog_file, ulog_file_name)
 
                 # put additional data into a DB
                 con = sqlite3.connect(get_db_filename())
@@ -340,7 +341,8 @@ class UploadHandler(TornadoRequestHandlerBase):
                     # also generate the additional DB entry
                     # (we may have the log already loaded in 'ulog', however the
                     # lru cache will make it very quick to load it again)
-                    generate_db_data_from_log_file(log_id, con)
+                    # Run in executor to avoid blocking. Pass None for connection to create a new one in the thread.
+                    await IOLoop.current().run_in_executor(None, generate_db_data_from_log_file, log_id, None)
                     # also generate the preview image
                     IOLoop.instance().add_callback(generate_overview_img_from_id, log_id)
 
