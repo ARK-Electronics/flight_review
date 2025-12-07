@@ -147,11 +147,12 @@ else:
         # read the data from DB
         db_data = DBData()
         vehicle_data = None
+        delete_url = None
         try:
             con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
             cur = con.cursor()
             cur.execute('select Description, Feedback, Type, WindSpeed, Rating, VideoUrl, '
-                        'ErrorLabels, Uploader from Logs where Id = ?', [log_id])
+                        'ErrorLabels, Uploader, Email, Token from Logs where Id = ?', [log_id])
             db_tuple = cur.fetchone()
             if db_tuple is not None:
                 db_data.description = db_tuple[0]
@@ -164,6 +165,29 @@ else:
                     [int(x) for x in db_tuple[6].split(',') if len(x) > 0]) \
                     if db_tuple[6] else []
                 db_data.uploader = db_tuple[7]
+                db_data.email = db_tuple[8]
+                db_data.token = db_tuple[9]
+
+                # Check if user can delete
+                can_delete = False
+                if user:
+                    cur.execute("SELECT IsAdmin, Email FROM Users WHERE Username=?", (user,))
+                    row = cur.fetchone()
+                    if row:
+                        is_admin = row[0]
+                        user_email = row[1]
+                        
+                        if is_admin:
+                            can_delete = True
+                        elif user_email and db_data.email and user_email == db_data.email:
+                            can_delete = True
+                        elif db_data.uploader and user == db_data.uploader:
+                            can_delete = True
+                
+                if can_delete:
+                    delete_url = f"edit_entry?action=delete&log={log_id}"
+
+            # vehicle data
 
             # vehicle data
             if 'sys_uuid' in ulog.msg_info_dict:
@@ -252,7 +276,7 @@ else:
 
             try:
                 plots = generate_plots(ulog, px4_ulog, db_data, vehicle_data,
-                                       link_to_3d_page, link_to_pid_analysis_page)
+                                       link_to_3d_page, link_to_pid_analysis_page, delete_url)
 
                 title = 'Flight Review - '+px4_ulog.get_mav_type()
 

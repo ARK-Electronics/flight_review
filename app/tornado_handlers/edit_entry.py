@@ -73,21 +73,35 @@ Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
         """
         con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
         cur = con.cursor()
-        cur.execute('select Token, Uploader from Logs where Id = ?', (log_id,))
+        cur.execute('select Token, Uploader, Email from Logs where Id = ?', (log_id,))
         db_tuple = cur.fetchone()
         if db_tuple is None:
             return False
         
         db_token = db_tuple[0]
         db_uploader = db_tuple[1]
+        db_email = db_tuple[2]
         
         authorized = False
         if token and token == db_token:
             authorized = True
         elif user:
-            authorized = True
+            # Check if user is admin or owner
+            cur.execute("SELECT IsAdmin, Email FROM Users WHERE Username=?", (user,))
+            user_row = cur.fetchone()
+            if user_row:
+                is_admin = user_row[0]
+                user_email = user_row[1]
+                
+                if is_admin:
+                    authorized = True
+                elif db_uploader and user == db_uploader:
+                    authorized = True
+                elif db_email and user_email and db_email == user_email:
+                    authorized = True
             
         if not authorized:
+            con.close()
             return False
 
         # kml file

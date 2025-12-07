@@ -22,6 +22,8 @@ class DBData:
         self.error_labels = []
         self.source = ''
         self.uploader = ''
+        self.email = ''
+        self.token = ''
 
         super().__init__()
 
