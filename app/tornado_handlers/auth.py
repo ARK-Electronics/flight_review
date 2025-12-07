@@ -79,11 +79,12 @@ class RegisterHandler(TornadoRequestHandlerBase):
             cur.execute("SELECT COUNT(*) FROM Users")
             count = cur.fetchone()[0]
             approved = 1 if count == 0 else 0
+            is_admin = 1 if count == 0 else 0
             
             account_token = str(uuid.uuid4())
 
-            cur.execute("INSERT INTO Users (Username, PasswordHash, Email, Approved, AccountToken) VALUES (?, ?, ?, ?, ?)",
-                        (username, password_hash, email, approved, account_token))
+            cur.execute("INSERT INTO Users (Username, PasswordHash, Email, Approved, AccountToken, IsAdmin) VALUES (?, ?, ?, ?, ?, ?)",
+                        (username, password_hash, email, approved, account_token, is_admin))
             con.commit()
             
             msg = "Registration successful. "

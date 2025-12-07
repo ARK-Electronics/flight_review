@@ -140,6 +140,50 @@ You can now login here:
     return _send_email([user_email], subject, content)
 
 
+def send_admin_notification_email(admin_email, uploader_email, plot_url, delete_url, info):
+    """ send a notification email to admin after uploading a plot
+        :param info: dictionary with additional info
+    """
+    print(f"send_admin_notification_email called with email: '{admin_email}'", flush=True)
+
+    if admin_email == '':
+        return True
+
+    description = info['description']
+    if description == '':
+        description = info['airframe']
+        if 'vehicle_name' in info:
+            description = "{:} - {:}".format(description, info['vehicle_name'])
+
+    subject = "Log File uploaded ({:})".format(description)
+    if len(subject) > 78: # subject should not be longer than that
+        subject = subject[:78]
+    destination = [admin_email]
+
+    content = """\
+Hi Admin!
+
+A new log file was uploaded by {uploader_email}.
+
+It is available under:
+{plot_url}
+
+Description: {description}
+Feedback: {feedback}
+Vehicle type: {type}
+Airframe: {airframe}
+Hardware: {hardware}
+Vehicle UUID: {uuid}
+Software git hash: {software}
+Upload file name: {upload_filename}
+
+Use the following link to delete the log:
+{delete_url}
+""".format(plot_url=plot_url, delete_url=delete_url, uploader_email=uploader_email, **info)
+
+    return _send_email(destination, subject, content)
+
+
 def _send_email(destination, subject, content):
     """ common method for sending an email to one or more destinations """
 

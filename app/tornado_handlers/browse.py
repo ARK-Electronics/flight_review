@@ -78,6 +78,13 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
         con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
         cur = con.cursor()
 
+        # check if user is admin
+        is_admin = False
+        cur.execute("SELECT IsAdmin FROM Users WHERE Username=?", (self.current_user,))
+        row = cur.fetchone()
+        if row and row[0]:
+            is_admin = True
+
         sql_order = ' ORDER BY Date DESC'
 
         ordering_col = ['',#table row number
@@ -94,24 +101,34 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
                         'LogsGenerated.NumLoggedErrors',
                         '' #FlightModes
                         ]
-        if ordering_col[order_ind] != '':
+        if is_admin:
+            ordering_col.append('Logs.Email')
+
+        if order_ind < len(ordering_col) and ordering_col[order_ind] != '':
             sql_order = ' ORDER BY ' + ordering_col[order_ind]
             if order_dir == 'desc':
                 sql_order += ' DESC'
 
-        cur.execute('SELECT Logs.Id, Logs.Date, '
-                    '       Logs.Description, Logs.WindSpeed, '
-                    '       Logs.Rating, Logs.VideoUrl, '
-                    '       LogsGenerated.* '
-                    'FROM Logs '
-                    '   LEFT JOIN LogsGenerated on Logs.Id=LogsGenerated.Id '
-                    'WHERE Logs.Public = 1 AND NOT Logs.Source = "CI" '
-                    +sql_order)
+        query = 'SELECT Logs.Id, Logs.Date, ' \
+                '       Logs.Description, Logs.WindSpeed, ' \
+                '       Logs.Rating, Logs.VideoUrl, ' \
+                '       LogsGenerated.* '
+        if is_admin:
+            query += ', Logs.Email, Logs.Public '
+
+        query += 'FROM Logs ' \
+                 '   LEFT JOIN LogsGenerated on Logs.Id=LogsGenerated.Id '
+
+        where_clause = 'WHERE NOT Logs.Source = "CI" '
+        if not is_admin:
+            where_clause += 'AND Logs.Public = 1 '
+
+        cur.execute(query + where_clause + sql_order)
 
         # pylint: disable=invalid-name
         Columns = collections.namedtuple("Columns", "columns search_only_columns")
 
-        def get_columns_from_tuple(db_tuple, counter, all_overview_imgs):
+        def get_columns_from_tuple(db_tuple, counter, all_overview_imgs, is_admin):
             """ load the columns (list of strings) from a db_tuple
             """
 
@@ -217,7 +234,21 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
                     </div>
                 """
 
-            return Columns([
+            # Handle extra columns
+            uploader_email = ""
+            is_public = 1
+            if is_admin:
+                # LogsGenerated has 14 columns. 
+                # db_tuple indices:
+                # 0-5: Logs columns
+                # 6-19: LogsGenerated columns
+                # 20: Email
+                # 21: Public
+                if len(db_tuple) > 20:
+                    uploader_email = db_tuple[20]
+                    is_public = db_tuple[21]
+
+            columns_list = [
                 counter,
                 f'<a href="plot_app?log={log_id}">{log_date}</a>',
                 image_col,
@@ -228,7 +259,12 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
                 duration_str,
                 start_time_str,
                 flight_modes
-            ], search_only_columns)
+            ]
+            
+            if is_admin:
+                columns_list.append(uploader_email)
+
+            return Columns(columns_list, search_only_columns)
 
         def is_hashish(q: str) -> bool:
             """ return true if the string looks like a hash """
@@ -267,7 +303,7 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
             for i in range(data_start, min(data_start + data_length, len(db_tuples))):
                 counter += 1
 
-                columns = get_columns_from_tuple(db_tuples[i], counter, all_overview_imgs)
+                columns = get_columns_from_tuple(db_tuples[i], counter, all_overview_imgs, is_admin)
                 if columns is None:
                     continue
 
@@ -281,7 +317,7 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
             for db_tuple in db_tuples:
                 counter += 1
 
-                columns = get_columns_from_tuple(db_tuple, counter, all_overview_imgs)
+                columns = get_columns_from_tuple(db_tuple, counter, all_overview_imgs, is_admin)
 
                 if columns is None:
                     continue
@@ -333,5 +369,17 @@ class BrowseHandler(TornadoRequestHandlerBase):
         search_str = self.get_argument('search', '').lower()
         if len(search_str) > 0:
             template_args['initial_search'] = json.dumps(search_str)
+
+        # check if user is admin
+        is_admin = False
+        if self.current_user:
+            con = sqlite3.connect(get_db_filename())
+            cur = con.cursor()
+            cur.execute("SELECT IsAdmin FROM Users WHERE Username=?", (self.current_user,))
+            row = cur.fetchone()
+            if row and row[0]:
+                is_admin = True
+            con.close()
+        template_args['is_admin'] = is_admin
 
         self.render_jinja(BROWSE_TEMPLATE, **template_args)

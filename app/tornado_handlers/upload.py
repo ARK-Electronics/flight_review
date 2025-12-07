@@ -31,7 +31,7 @@ from overview_generator import generate_overview_img_from_id
 #pylint: disable=relative-beyond-top-level
 from .common import get_jinja_env, CustomHTTPError, generate_db_data_from_log_file, \
     TornadoRequestHandlerBase
-from .send_email import send_notification_email, send_flightreport_email
+from .send_email import send_notification_email, send_flightreport_email, send_admin_notification_email
 from .multipart_streamer import MultiPartStreamer
 
 
@@ -352,6 +352,10 @@ class UploadHandler(TornadoRequestHandlerBase):
 
                 # send notification emails
                 send_notification_email(email, full_plot_url, delete_url, info)
+
+                admin_email = "logs@arkelectron.com"
+                if email != admin_email:
+                    send_admin_notification_email(admin_email, email, full_plot_url, delete_url, info)
 
                 if should_redirect:
                     self.redirect(url)

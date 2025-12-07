@@ -158,6 +158,7 @@ with con:
                 "PasswordHash TEXT, "
                 "Email TEXT, "
                 "Approved INTEGER DEFAULT 0, "
+                "IsAdmin INTEGER DEFAULT 0, "
                 "CONSTRAINT Username_PK PRIMARY KEY (Username))")
     else:
         # Check for Approved column
@@ -168,6 +169,9 @@ with con:
         if 'AccountToken' not in column_names:
             print('Adding column AccountToken to Users')
             cur.execute("ALTER TABLE Users ADD COLUMN AccountToken TEXT DEFAULT ''")
+        if 'IsAdmin' not in column_names:
+            print('Adding column IsAdmin to Users')
+            cur.execute("ALTER TABLE Users ADD COLUMN IsAdmin INTEGER DEFAULT 0")
 
 con.close()
 
