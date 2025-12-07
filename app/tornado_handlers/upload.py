@@ -169,7 +169,7 @@ class UploadHandler(TornadoRequestHandlerBase):
                     should_redirect = form_data['redirect'].decode("utf-8") == 'true'
                 wind_speed = -1
                 rating = ''
-                stored_email = ''
+                stored_email = email
                 video_url = ''
                 is_public = 0
                 vehicle_name = ''

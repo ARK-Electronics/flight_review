@@ -262,7 +262,10 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
             ]
             
             if is_admin:
+                if uploader_email is None:
+                    uploader_email = ""
                 columns_list.append(uploader_email)
+                columns_list.append("Public" if is_public else "Private")
 
             return Columns(columns_list, search_only_columns)
 

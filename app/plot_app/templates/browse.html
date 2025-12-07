@@ -26,6 +26,7 @@
                     <th>Flight Modes</th>
                     {% if is_admin %}
                     <th>Email</th>
+                    <th>Visibility</th>
                     {% endif %}
                 </tr>
             </thead>
@@ -68,6 +69,7 @@
                 { "width": "10%", "orderable": false } /* flight modes */
                 {% if is_admin %}
                 , { "orderable": false } /* email */
+                , { "orderable": false } /* visibility */
                 {% endif %}
             ],
             "language": {
