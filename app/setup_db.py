@@ -172,6 +172,12 @@ with con:
         if 'IsAdmin' not in column_names:
             print('Adding column IsAdmin to Users')
             cur.execute("ALTER TABLE Users ADD COLUMN IsAdmin INTEGER DEFAULT 0")
+        if 'ResetToken' not in column_names:
+            print('Adding column ResetToken to Users')
+            cur.execute("ALTER TABLE Users ADD COLUMN ResetToken TEXT DEFAULT ''")
+        if 'ResetTokenExpiration' not in column_names:
+            print('Adding column ResetTokenExpiration to Users')
+            cur.execute("ALTER TABLE Users ADD COLUMN ResetTokenExpiration REAL DEFAULT 0")
 
 con.close()
 

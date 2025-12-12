@@ -1,11 +1,12 @@
 import sqlite3
 import os
 import sys
+import time
 import traceback
 from passlib.hash import bcrypt
 import tornado.web
 import uuid
-from .send_email import send_approval_email, send_account_approved_email
+from .send_email import send_approval_email, send_account_approved_email, send_reset_password_email
 from config import get_domain_name, get_http_protocol
 
 # this is needed for the following imports
@@ -150,6 +151,106 @@ class ApproveUserHandler(TornadoRequestHandlerBase):
             else:
                 self.render_jinja('login.html', error="Invalid or expired approval link.", next="/")
                 
+        except Exception:
+            traceback.print_exc()
+            self.write_error(500)
+        finally:
+            if con:
+                con.close()
+
+
+class ForgotPasswordHandler(TornadoRequestHandlerBase):
+    def get(self):
+        self.render_jinja('forgot_password.html', error=None, message=None)
+
+    def post(self):
+        con = None
+        try:
+            email = self.get_argument("email")
+            con = sqlite3.connect(get_db_filename())
+            cur = con.cursor()
+            cur.execute("SELECT Username FROM Users WHERE Email=?", (email,))
+            row = cur.fetchone()
+            
+            if row:
+                username = row[0]
+                token = str(uuid.uuid4())
+                # Expiration 1 hour from now
+                expiration = time.time() + 3600 
+                
+                cur.execute("UPDATE Users SET ResetToken=?, ResetTokenExpiration=? WHERE Username=?", (token, expiration, username))
+                con.commit()
+                
+                protocol = get_http_protocol()
+                domain = get_domain_name()
+                reset_url = f"{protocol}://{domain}/reset_password?token={token}"
+                
+                if send_reset_password_email(email, reset_url):
+                    self.render_jinja('forgot_password.html', error=None, message="If an account with that email exists, a password reset link has been sent.")
+                else:
+                    self.render_jinja('forgot_password.html', error="Failed to send email.", message=None)
+            else:
+                # Don't reveal if email exists
+                self.render_jinja('forgot_password.html', error=None, message="If an account with that email exists, a password reset link has been sent.")
+        except Exception:
+            traceback.print_exc()
+            self.write_error(500)
+        finally:
+            if con:
+                con.close()
+
+class ResetPasswordHandler(TornadoRequestHandlerBase):
+    def get(self):
+        con = None
+        try:
+            token = self.get_argument("token", None)
+            if not token:
+                self.redirect("/login")
+                return
+                
+            con = sqlite3.connect(get_db_filename())
+            cur = con.cursor()
+            cur.execute("SELECT Username, ResetTokenExpiration FROM Users WHERE ResetToken=?", (token,))
+            row = cur.fetchone()
+            
+            if row:
+                expiration = row[1]
+                if time.time() < expiration:
+                    self.render_jinja('reset_password.html', error=None, message=None, token=token)
+                else:
+                    self.render_jinja('login.html', error="Password reset link has expired.", next="/")
+            else:
+                self.render_jinja('login.html', error="Invalid password reset link.", next="/")
+        except Exception:
+            traceback.print_exc()
+            self.write_error(500)
+        finally:
+            if con:
+                con.close()
+
+    def post(self):
+        con = None
+        try:
+            token = self.get_argument("token")
+            password = self.get_argument("password")
+            
+            con = sqlite3.connect(get_db_filename())
+            cur = con.cursor()
+            cur.execute("SELECT Username, ResetTokenExpiration FROM Users WHERE ResetToken=?", (token,))
+            row = cur.fetchone()
+            
+            if row:
+                username = row[0]
+                expiration = row[1]
+                if time.time() < expiration:
+                    password_hash = bcrypt.hash(password)
+                    cur.execute("UPDATE Users SET PasswordHash=?, ResetToken='', ResetTokenExpiration=0 WHERE Username=?", (password_hash, username))
+                    con.commit()
+                    self.render_jinja('login.html', error=None, message="Password reset successful. You can now login.", next="/")
+                else:
+                    self.render_jinja('login.html', error="Password reset link has expired.", next="/")
+            else:
+                self.render_jinja('login.html', error="Invalid password reset link.", next="/")
         except Exception:
             traceback.print_exc()
             self.write_error(500)

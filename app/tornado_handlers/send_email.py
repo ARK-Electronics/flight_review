@@ -184,6 +184,28 @@ Use the following link to delete the log:
     return _send_email(destination, subject, content)
 
 
+def send_reset_password_email(email_address, reset_url):
+    """ send a reset password email """
+    print(f"send_reset_password_email called with email: '{email_address}'", flush=True)
+
+    if email_address == '':
+        return False
+
+    subject = "Password Reset Request"
+    destination = [email_address]
+
+    content = """\
+Hi there!
+
+You requested a password reset. Please click the link below to reset your password:
+{reset_url}
+
+If you did not request this, please ignore this email.
+""".format(reset_url=reset_url)
+
+    return _send_email(destination, subject, content)
+
+
 def _send_email(destination, subject, content):
     """ common method for sending an email to one or more destinations """
 
