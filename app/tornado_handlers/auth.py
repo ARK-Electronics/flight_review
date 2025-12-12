@@ -185,7 +185,7 @@ class ForgotPasswordHandler(TornadoRequestHandlerBase):
                 domain = get_domain_name()
                 reset_url = f"{protocol}://{domain}/reset_password?token={token}"
                 
-                if send_reset_password_email(email, reset_url):
+                if send_reset_password_email(email, username, reset_url):
                     self.render_jinja('forgot_password.html', error=None, message="If an account with that email exists, a password reset link has been sent.")
                 else:
                     self.render_jinja('forgot_password.html', error="Failed to send email.", message=None)
