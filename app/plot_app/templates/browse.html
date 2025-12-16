@@ -29,6 +29,22 @@
                     <th>Visibility</th>
                     {% endif %}
                 </tr>
+                <tr class="column-filters">
+                    <th></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Uploaded" /></th>
+                    <th></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Type" /></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Airframe" /></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Hardware" /></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Software" /></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Duration" /></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Start Time" /></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Flight Modes" /></th>
+                    {% if is_admin %}
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Email" /></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Visibility" /></th>
+                    {% endif %}
+                </tr>
             </thead>
             <tbody>
             </tbody>
@@ -46,7 +62,7 @@
 <script type="text/javascript">
 
     $(document).ready(function () {
-        $('#logs_table').DataTable({
+        var table = $('#logs_table').DataTable({
 {% if initial_search %}
             "search": {
                 "search": {{ initial_search }}
@@ -54,6 +70,7 @@
 {% endif %}
             "order": [[1, 'desc']],
             "ordering": true,
+            "orderCellsTop": true,
             "lengthMenu": [10, 25, 50, 75, 100],
 
             "columns": [
@@ -61,15 +78,15 @@
                 { "width": "10%" }, /* log date */
                 { "width": "70px", "orderable": false }, /* overview */
                 {  }, /* vehicle type */
-                { "orderable": false },/* airframe - not from DB */
+                {  },/* airframe */
                 {  }, /* hardware */
                 { "width": "5%" }, /* version */
                 { "width": "5%" }, /* duration */
                 {  }, /* start time */
-                { "width": "10%", "orderable": false } /* flight modes */
+                { "width": "10%" } /* flight modes */
                 {% if is_admin %}
-                , { "orderable": false } /* email */
-                , { "orderable": false } /* visibility */
+                , {  } /* email */
+                , {  } /* visibility */
                 {% endif %}
             ],
             "language": {
@@ -77,11 +94,27 @@
             },
             "serverSide": true,
             "ajax": "browse_data_retrieval",
+            "initComplete": function () {
+                var api = this.api();
+
+                // Hook up per-column filters (second header row)
+                api.columns().every(function (colIdx) {
+                    var headerCell = $('#logs_table thead tr.column-filters th').eq(colIdx);
+                    var input = $('input', headerCell);
+                    if (!input.length) {
+                        return;
+                    }
+                    input.on('click', function (e) { e.stopPropagation(); });
+                    input.on('keyup change clear', function () {
+                        if (api.column(colIdx).search() !== this.value) {
+                            api.column(colIdx).search(this.value).draw();
+                        }
+                    });
+                });
+            },
         });
-        var table = $('#logs_table').DataTable();
         table.on('xhr', function () {
             try {
-                var table = $('#logs_table').DataTable();
                 var search_term = table.search();
                 var url = new URL(window.location.href);
                 if (search_term === '') {

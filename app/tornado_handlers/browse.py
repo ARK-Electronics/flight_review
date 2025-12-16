@@ -64,7 +64,10 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
 
         search_str = self.get_argument('search[value]', '').lower()
 
-        order_ind = int(self.get_argument('order[0][column]'))
+        try:
+            order_ind = int(self.get_argument('order[0][column]'))
+        except Exception:
+            order_ind = 1
         order_dir = self.get_argument('order[0][dir]', '').lower()
         data_start = int(self.get_argument('start'))
         data_length = int(self.get_argument('length'))
@@ -85,29 +88,13 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
         if row and row[0]:
             is_admin = True
 
-        sql_order = ' ORDER BY Date DESC'
-
-        ordering_col = ['',#table row number
-                        'Logs.Date',
-                        '',#Overview - img
-                        'Logs.Description',
-                        'LogsGenerated.MavType',
-                        '',#Airframe - not from DB
-                        'LogsGenerated.Hardware',
-                        'LogsGenerated.Software',
-                        'LogsGenerated.Duration',
-                        'LogsGenerated.StartTime',
-                        '',#Rating
-                        'LogsGenerated.NumLoggedErrors',
-                        '' #FlightModes
-                        ]
-        if is_admin:
-            ordering_col.append('Logs.Email')
-
-        if order_ind < len(ordering_col) and ordering_col[order_ind] != '':
-            sql_order = ' ORDER BY ' + ordering_col[order_ind]
-            if order_dir == 'desc':
-                sql_order += ' DESC'
+        # Per-column filters from DataTables (server-side)
+        column_count = 10 + (2 if is_admin else 0)
+        column_filters = [
+            self.get_argument(f'columns[{i}][search][value]', '').lower().strip()
+            for i in range(column_count)
+        ]
+        has_column_filters = any(v != '' for v in column_filters)
 
         query = 'SELECT Logs.Id, Logs.Date, ' \
                 '       Logs.Description, Logs.WindSpeed, ' \
@@ -123,7 +110,8 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
         if not is_admin:
             where_clause += 'AND Logs.Public = 1 '
 
-        cur.execute(query + where_clause + sql_order)
+        # Keep a stable default ordering (matches the UI default: Uploaded desc)
+        cur.execute(query + where_clause + ' ORDER BY Logs.Date DESC')
 
         # pylint: disable=invalid-name
         Columns = collections.namedtuple("Columns", "columns search_only_columns")
@@ -282,6 +270,139 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
                 return False
             return bool(_TAG_PREFIX_RE.match(q))
 
+        def _ver_sw_display(db_data) -> str:
+            """Match the browse page software display formatting."""
+            ver_sw = db_data.ver_sw or ''
+            if len(ver_sw) > 10:
+                ver_sw = ver_sw[:6]
+            if (db_data.ver_sw_release or ''):
+                try:
+                    release_split = db_data.ver_sw_release.split()
+                    release_type = int(release_split[1])
+                    if release_type == 255:  # it's a release
+                        ver_sw = release_split[0]
+                except Exception:
+                    pass
+            return ver_sw
+
+        def _flight_modes_str(flight_modes_set) -> str:
+            return ', '.join([
+                flight_modes_table[x][0]
+                for x in flight_modes_set
+                if x in flight_modes_table
+            ])
+
+        def _row_filter_sort_values(db_tuple, is_admin):
+            """Return (filter_values, sort_values, search_only_values) for a DB row.
+
+            filter_values are used for per-column filtering; sort_values are used
+            for server-side ordering.
+            """
+            db_data = DBDataJoin()
+            log_id = db_tuple[0]
+            log_date_str = db_tuple[1].strftime('%Y-%m-%d')
+
+            generateddata_log_id = db_tuple[6]
+            if log_id != generateddata_log_id:
+                db_data_gen = get_generated_db_data_from_log(log_id, con, cur)
+                if db_data_gen is None:
+                    return None
+                db_data.add_generated_db_data_from_log(db_data_gen)
+            else:
+                db_data.duration_s = db_tuple[7]
+                db_data.mav_type = db_tuple[8]
+                db_data.estimator = db_tuple[9]
+                db_data.sys_autostart_id = db_tuple[10]
+                db_data.sys_hw = db_tuple[11]
+                db_data.ver_sw = db_tuple[12]
+                db_data.num_logged_errors = db_tuple[13]
+                db_data.num_logged_warnings = db_tuple[14]
+                db_data.flight_modes = {int(x) for x in db_tuple[15].split(',') if len(x) > 0}
+                db_data.ver_sw_release = db_tuple[16]
+                db_data.vehicle_uuid = db_tuple[17]
+                db_data.flight_mode_durations = [
+                    tuple(map(int, x.split(':'))) for x in db_tuple[18].split(',') if len(x) > 0
+                ]
+                db_data.start_time_utc = db_tuple[19]
+
+            airframe_data = get_airframe_data(db_data.sys_autostart_id)
+            airframe = db_data.sys_autostart_id if airframe_data is None else airframe_data['name']
+
+            ver_sw_disp = _ver_sw_display(db_data)
+            duration_str = format_duration(db_data.duration_s)
+            duration_s = 0
+            try:
+                duration_s = int(db_data.duration_s)
+            except Exception:
+                duration_s = 0
+
+            start_time_str = 'N/A'
+            start_time_utc = 0
+            try:
+                start_time_utc = int(db_data.start_time_utc)
+            except Exception:
+                start_time_utc = 0
+            if start_time_utc != 0:
+                try:
+                    start_datetime = datetime.fromtimestamp(start_time_utc)
+                    start_time_str = start_datetime.strftime("%Y-%m-%d %H:%M")
+                except ValueError:
+                    start_time_str = 'N/A'
+
+            flight_modes_set = getattr(db_data, 'flight_modes', set()) or set()
+            flight_modes_str = _flight_modes_str(flight_modes_set)
+
+            uploader_email = ""
+            visibility = ""
+            visibility_sort = 0
+            if is_admin:
+                if len(db_tuple) > 20:
+                    uploader_email = db_tuple[20] or ""
+                    is_public = 1 if db_tuple[21] else 0
+                    visibility = "Public" if is_public else "Private"
+                    visibility_sort = is_public
+
+            # Filter values correspond to the visible table columns.
+            # Column 0 (#) and 2 (Overview) are intentionally not filterable.
+            filter_values = [
+                "",
+                log_date_str,
+                "",
+                str(db_data.mav_type or ""),
+                str(airframe or ""),
+                str(db_data.sys_hw or ""),
+                str(ver_sw_disp or ""),
+                str(duration_str or ""),
+                str(start_time_str or ""),
+                str(flight_modes_str or ""),
+            ]
+            sort_values = [
+                0,
+                log_date_str,
+                "",
+                str(db_data.mav_type or ""),
+                str(airframe or ""),
+                str(db_data.sys_hw or ""),
+                str(ver_sw_disp or ""),
+                duration_s,
+                start_time_utc,
+                str(flight_modes_str or ""),
+            ]
+
+            if is_admin:
+                filter_values.extend([uploader_email, visibility])
+                sort_values.extend([uploader_email.lower(), visibility_sort])
+
+            search_only = []
+            if db_data.ver_sw is not None:
+                search_only.append(str(db_data.ver_sw))
+            if db_data.ver_sw_release is not None:
+                search_only.append(str(db_data.ver_sw_release))
+            if db_data.vehicle_uuid is not None:
+                search_only.append(str(db_data.vehicle_uuid))
+
+            return filter_values, sort_values, search_only
+
         def _flatten_strings(maybe_list):
             """ flatten a list of strings or a single string into a single string list """
             if not maybe_list:
@@ -300,33 +421,38 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
 
         filtered_counter = 0
         all_overview_imgs = set(os.listdir(get_overview_img_filepath()))
-        if search_str == '':
-            # speed-up the request by iterating only over the requested items
-            counter = data_start
-            for i in range(data_start, min(data_start + data_length, len(db_tuples))):
-                counter += 1
+        # With server-side column filters and ordering, we need to compute the
+        # filtered set and sort it before paging.
+        matched_rows = []  # list of (sort_key, db_tuple)
 
-                columns = get_columns_from_tuple(db_tuples[i], counter, all_overview_imgs, is_admin)
-                if columns is None:
+        hash_mode = is_hashish(search_str)
+        tag_mode = is_tagish(search_str)
+        do_global_search = search_str != ''
+
+        for db_tuple in db_tuples:
+            row_values = _row_filter_sort_values(db_tuple, is_admin)
+            if row_values is None:
+                continue
+            filter_values, sort_values, search_only = row_values
+
+            # Per-column filtering
+            if has_column_filters:
+                col_match = True
+                for i, f in enumerate(column_filters):
+                    if not f:
+                        continue
+                    if i >= len(filter_values):
+                        continue
+                    if f not in str(filter_values[i]).lower():
+                        col_match = False
+                        break
+                if not col_match:
                     continue
 
-                json_output['data'].append(columns.columns)
-            filtered_counter = len(db_tuples)
-        else:
-            counter = 1
-            hash_mode = is_hashish(search_str)
-            tag_mode = is_tagish(search_str)
-
-            for db_tuple in db_tuples:
-                counter += 1
-
-                columns = get_columns_from_tuple(db_tuple, counter, all_overview_imgs, is_admin)
-
-                if columns is None:
-                    continue
-
-                visible = _flatten_strings(columns.columns)
-                hidden = _flatten_strings(columns.search_only_columns)
+            # Global search (DataTables search box)
+            if do_global_search:
+                visible = _flatten_strings(filter_values)
+                hidden = _flatten_strings(search_only)
 
                 prefix_hit = False
                 if tag_mode or hash_mode:
@@ -340,10 +466,34 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
                     haystack = [s.lower() for s in (visible + hidden)]
                     substring_hit = any(search_str in s for s in haystack)
 
-                if prefix_hit or substring_hit:
-                    if data_start <= filtered_counter < data_start + data_length:
-                        json_output['data'].append(columns.columns)
-                    filtered_counter += 1
+                if not (prefix_hit or substring_hit):
+                    continue
+
+            # Determine sort key for the selected column
+            sort_key = ''
+            if 0 <= order_ind < len(sort_values):
+                sort_key = sort_values[order_ind]
+            if isinstance(sort_key, str):
+                sort_key = sort_key.lower()
+
+            matched_rows.append((sort_key, db_tuple))
+
+        filtered_counter = len(matched_rows)
+
+        reverse_sort = order_dir == 'desc'
+        matched_rows.sort(key=lambda x: x[0], reverse=reverse_sort)
+
+        if data_length == -1:
+            data_length = filtered_counter
+
+        page_rows = matched_rows[data_start:data_start + data_length]
+        row_number = data_start
+        for _, db_tuple in page_rows:
+            row_number += 1
+            columns = get_columns_from_tuple(db_tuple, row_number, all_overview_imgs, is_admin)
+            if columns is None:
+                continue
+            json_output['data'].append(columns.columns)
 
         cur.close()
         con.close()
