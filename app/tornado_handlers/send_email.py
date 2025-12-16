@@ -15,7 +15,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plot_
 from config import email_config, email_notifications_config
 
 
-def send_notification_email(email_address, plot_url, delete_url, info):
+def send_notification_email(email_address, plot_url, delete_url, edit_url, info):
     """ send a notification email after uploading a plot
         :param info: dictionary with additional info
     """
@@ -53,13 +53,16 @@ Upload file name: {upload_filename}
 
 Use the following link to delete the log:
 {delete_url}
-""".format(plot_url=plot_url, delete_url=delete_url, **info)
+
+Use the following link to edit the flight notes:
+{edit_url}
+""".format(plot_url=plot_url, delete_url=delete_url, edit_url=edit_url, **info)
 
     return _send_email(destination, subject, content)
 
 
 def send_flightreport_email(destination, plot_url, rating_description,
-                            wind_speed, delete_url, uploader_email, info):
+                            wind_speed, delete_url, edit_url, uploader_email, info):
     """ send notification email for a flight report upload """
 
     if len(destination) == 0:
@@ -82,9 +85,12 @@ Software git hash: {software}
 
 Use the following link to delete the log:
 {delete_url}
+
+Use the following link to edit the flight notes:
+{edit_url}
 """.format(plot_url=plot_url,
            rating_description=rating_description, wind_speed=wind_speed,
-           delete_url=delete_url, uploader_email=uploader_email, **info)
+        delete_url=delete_url, edit_url=edit_url, uploader_email=uploader_email, **info)
 
     description = info['description']
     if description == '':
@@ -140,7 +146,7 @@ You can now login here:
     return _send_email([user_email], subject, content)
 
 
-def send_admin_notification_email(admin_email, uploader_email, plot_url, delete_url, info):
+def send_admin_notification_email(admin_email, uploader_email, plot_url, delete_url, edit_url, info):
     """ send a notification email to admin after uploading a plot
         :param info: dictionary with additional info
     """
@@ -179,7 +185,10 @@ Upload file name: {upload_filename}
 
 Use the following link to delete the log:
 {delete_url}
-""".format(plot_url=plot_url, delete_url=delete_url, uploader_email=uploader_email, **info)
+
+Use the following link to edit the flight notes:
+{edit_url}
+""".format(plot_url=plot_url, delete_url=delete_url, edit_url=edit_url, uploader_email=uploader_email, **info)
 
     return _send_email(destination, subject, content)
 

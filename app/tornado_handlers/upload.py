@@ -288,6 +288,9 @@ class UploadHandler(TornadoRequestHandlerBase):
                 delete_url = get_http_protocol()+'://'+get_domain_name()+ \
                     '/edit_entry?action=delete&log='+log_id+'&token='+token
 
+                edit_url = get_http_protocol()+'://'+get_domain_name()+ \
+                    '/edit_entry?action=edit_notes&log='+log_id+'&token='+token
+
                 # information for the notification email
                 info = {}
                 info['description'] = description
@@ -335,7 +338,7 @@ class UploadHandler(TornadoRequestHandlerBase):
                         list(destinations),
                         full_plot_url,
                         DBData.rating_str_static(rating),
-                        DBData.wind_speed_str_static(wind_speed), delete_url,
+                        DBData.wind_speed_str_static(wind_speed), delete_url, edit_url,
                         email, info)
 
                     # also generate the additional DB entry
@@ -351,11 +354,11 @@ class UploadHandler(TornadoRequestHandlerBase):
                 con.close()
 
                 # send notification emails
-                send_notification_email(email, full_plot_url, delete_url, info)
+                send_notification_email(email, full_plot_url, delete_url, edit_url, info)
 
                 admin_email = "logs@arkelectron.com"
                 if email != admin_email:
-                    send_admin_notification_email(admin_email, email, full_plot_url, delete_url, info)
+                    send_admin_notification_email(admin_email, email, full_plot_url, delete_url, edit_url, info)
 
                 if should_redirect:
                     self.redirect(url)

@@ -24,6 +24,42 @@ EDIT_TEMPLATE = 'edit.html'
 class EditEntryHandler(TornadoRequestHandlerBase):
     """ Edit a log entry, with confirmation (currently only delete) """
 
+    @staticmethod
+    def _is_authorized(cur, log_id, token, user=None):
+        """Return True if the request is authorized to modify the log."""
+        cur.execute('select Token, Uploader, Email from Logs where Id = ?', (log_id,))
+        db_tuple = cur.fetchone()
+        if db_tuple is None:
+            return False
+
+        db_token = db_tuple[0]
+        db_uploader = db_tuple[1]
+        db_email = db_tuple[2]
+
+        if token and token == db_token:
+            return True
+
+        if not user:
+            return False
+
+        # Check if user is admin or owner
+        cur.execute("SELECT IsAdmin, Email FROM Users WHERE Username=?", (user,))
+        user_row = cur.fetchone()
+        if not user_row:
+            return False
+
+        is_admin = user_row[0]
+        user_email = user_row[1]
+
+        if is_admin:
+            return True
+        if db_uploader and user == db_uploader:
+            return True
+        if db_email and user_email and db_email == user_email:
+            return True
+
+        return False
+
     def get(self, *args, **kwargs):
         """ GET request """
         log_id = escape(self.get_argument('log'))
@@ -57,11 +93,73 @@ Failed to delete the log file.
 Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
 </p>
 """.format(delete_url=delete_url, log_id=log_id)
+        elif action == 'edit_notes':
+            # Render a form to edit the flight notes/description
+            con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
+            cur = con.cursor()
+            try:
+                if not self._is_authorized(cur, log_id, token, self.current_user):
+                    raise tornado.web.HTTPError(403, 'Unauthorized')
+
+                cur.execute('select Description from Logs where Id = ?', (log_id,))
+                db_tuple = cur.fetchone()
+                current_description = ''
+                if db_tuple is not None and db_tuple[0] is not None:
+                    current_description = db_tuple[0]
+
+                token_param = ''
+                if token:
+                    token_param = f'&token={token}'
+
+                form_action = f"{self.request.path}?action=update_notes&log={log_id}{token_param}"
+                content = f"""
+<h3>Edit Flight Notes</h3>
+<form method=\"post\" action=\"{form_action}\" class=\"mt-3\">
+  <div class=\"mb-3\">
+    <label for=\"description\" class=\"form-label\">Flight notes</label>
+    <textarea class=\"form-control\" id=\"description\" name=\"description\" rows=\"6\" maxlength=\"5000\">{escape(current_description)}</textarea>
+    <div class=\"form-text\">Up to 5000 characters.</div>
+  </div>
+  <button type=\"submit\" class=\"btn btn-primary\">Save</button>
+  <a class=\"btn btn-link\" href=\"/plot_app?log={log_id}\">Cancel</a>
+</form>
+"""
+            finally:
+                cur.close()
+                con.close()
         else:
             raise tornado.web.HTTPError(400, 'Invalid Parameter')
 
         template = get_jinja_env().get_template(EDIT_TEMPLATE)
         self.write(template.render(content=content))
+
+
+    def post(self, *args, **kwargs):
+        """ POST request """
+        log_id = escape(self.get_argument('log'))
+        action = self.get_argument('action')
+        token = escape(self.get_argument('token', default=''))
+
+        if action != 'update_notes':
+            raise tornado.web.HTTPError(400, 'Invalid Parameter')
+
+        new_description = escape(self.get_body_argument('description', default=''))
+        if len(new_description) > 5000:
+            new_description = new_description[:5000]
+
+        con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
+        cur = con.cursor()
+        try:
+            if not self._is_authorized(cur, log_id, token, self.current_user):
+                raise tornado.web.HTTPError(403, 'Unauthorized')
+
+            cur.execute('update Logs set Description = ? where Id = ?', (new_description, log_id))
+            con.commit()
+        finally:
+            cur.close()
+            con.close()
+
+        self.redirect('/plot_app?log=' + log_id)
 
 
     @staticmethod
@@ -73,34 +171,8 @@ Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
         """
         con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
         cur = con.cursor()
-        cur.execute('select Token, Uploader, Email from Logs where Id = ?', (log_id,))
-        db_tuple = cur.fetchone()
-        if db_tuple is None:
-            return False
-        
-        db_token = db_tuple[0]
-        db_uploader = db_tuple[1]
-        db_email = db_tuple[2]
-        
-        authorized = False
-        if token and token == db_token:
-            authorized = True
-        elif user:
-            # Check if user is admin or owner
-            cur.execute("SELECT IsAdmin, Email FROM Users WHERE Username=?", (user,))
-            user_row = cur.fetchone()
-            if user_row:
-                is_admin = user_row[0]
-                user_email = user_row[1]
-                
-                if is_admin:
-                    authorized = True
-                elif db_uploader and user == db_uploader:
-                    authorized = True
-                elif db_email and user_email and db_email == user_email:
-                    authorized = True
-            
-        if not authorized:
+        if not EditEntryHandler._is_authorized(cur, log_id, token, user):
+            cur.close()
             con.close()
             return False
 

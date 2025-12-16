@@ -74,11 +74,16 @@
 			{% endif %}
 						</div>
 					</li>
-                    {% if current_user %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="edit_entry?action=delete&log={{ log_id }}" onclick="return confirm('Are you sure you want to delete this log?');">Delete</a>
-                    </li>
-                    {% endif %}
+					{% if edit_notes_url %}
+					<li class="nav-item">
+						<a class="nav-link" href="{{ edit_notes_url }}">Edit notes</a>
+					</li>
+					{% endif %}
+					{% if current_user %}
+					<li class="nav-item">
+						<a class="nav-link" href="edit_entry?action=delete&log={{ log_id }}" onclick="return confirm('Are you sure you want to delete this log?');">Delete</a>
+					</li>
+					{% endif %}
 					<li class="nav-item dropdown" id="navigation-menu">
 						<a class="nav-link dropdown-toggle"
 						role="button"

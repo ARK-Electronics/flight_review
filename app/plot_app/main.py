@@ -148,6 +148,7 @@ else:
         db_data = DBData()
         vehicle_data = None
         delete_url = None
+        edit_notes_url = None
         try:
             con = sqlite3.connect(get_db_filename(), detect_types=sqlite3.PARSE_DECLTYPES)
             cur = con.cursor()
@@ -186,6 +187,7 @@ else:
                 
                 if can_delete:
                     delete_url = f"edit_entry?action=delete&log={log_id}"
+                    edit_notes_url = f"edit_entry?action=edit_notes&log={log_id}"
 
             # vehicle data
 
@@ -210,6 +212,8 @@ else:
             con.close()
         except:
             print("DB access failed:", sys.exc_info()[0], sys.exc_info()[1])
+
+        curdoc().template_variables['edit_notes_url'] = edit_notes_url
 
         def show_exception_page():
             """ show an error page in case of an unknown/unhandled exception """
