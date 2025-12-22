@@ -623,11 +623,31 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
             # only plot if at least one of the outputs is not constant
             all_constant = True
             if data_plot.dataset:
-                num_actuator_outputs = min(np.amax(data_plot.dataset.data['noutputs']),
-                                           num_actuator_outputs)
+                # PX4 logs expose actuator_outputs.noutputs. Some non-ULog sources may not.
+                # Fall back to inferring available output[N] columns.
+                if 'noutputs' in data_plot.dataset.data:
+                    try:
+                        num_actuator_outputs = min(int(np.amax(data_plot.dataset.data['noutputs'])),
+                                                   num_actuator_outputs)
+                    except Exception:
+                        pass
+                else:
+                    output_indices = []
+                    for key in data_plot.dataset.data.keys():
+                        if key.startswith('output[') and key.endswith(']'):
+                            try:
+                                output_indices.append(int(key[len('output['):-1]))
+                            except Exception:
+                                pass
+                    if output_indices:
+                        num_actuator_outputs = min(max(output_indices) + 1, num_actuator_outputs)
 
                 for i in range(num_actuator_outputs):
-                    output_data = data_plot.dataset.data['output['+str(i)+']']
+                    key = 'output[' + str(i) + ']'
+                    if key not in data_plot.dataset.data:
+                        num_actuator_outputs = i
+                        break
+                    output_data = data_plot.dataset.data[key]
                     if not np.all(output_data == output_data[0]):
                         all_constant = False
 
