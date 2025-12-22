@@ -20,6 +20,8 @@ from configured_plots import generate_plots
 from pid_analysis_plots import get_pid_analysis_plots
 from statistics_plots import StatisticsPlots
 
+from logs.px4_ulog_compat import PX4ULogCompat
+
 import tornado.web
 
 #pylint: disable=invalid-name, redefined-outer-name
@@ -127,13 +129,22 @@ else:
                 print('GET[log]={}'.format(log_id))
                 ulog_file_name = get_log_filename(log_id)
 
-        ulog = load_ulog_file(ulog_file_name)
-        px4_ulog = PX4ULog(ulog)
-        px4_ulog.add_roll_pitch_yaw()
+        ulog = load_log_file(ulog_file_name)
+        try:
+            px4_ulog = PX4ULog(ulog)
+            px4_ulog.add_roll_pitch_yaw()
+        except Exception:
+            px4_ulog = PX4ULogCompat(ulog, source_name=str(ulog.msg_info_dict.get('sys_name', 'Log')))
 
     except ULogException:
         error_message = ('A parsing error occured when trying to read the file - '
                          'the log is most likely corrupt.')
+    except Exception as e:
+        # This includes UnsupportedLogFormat (e.g. .bbl) or other parsing problems
+        if hasattr(e, 'args') and len(e.args) > 0:
+            error_message = str(e.args[0])
+        else:
+            error_message = 'An error occured when trying to read the file.'
     except:
         print("Error loading file:", sys.exc_info()[0], sys.exc_info()[1])
         error_message = 'An error occured when trying to read the file.'

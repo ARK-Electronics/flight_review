@@ -15,8 +15,8 @@ from pyulog.ulog2kml import convert_ulog2kml
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
-from helper import get_log_filename, validate_log_id, \
-    flight_modes_table, load_ulog_file, get_default_parameters
+from helper import get_log_filename, \
+    flight_modes_table, load_log_file, get_default_parameters
 
 from config import get_db_filename, get_kml_filepath
 
@@ -50,8 +50,7 @@ class DownloadHandler(TornadoRequestHandlerBase):
                 db_tuple = cur.fetchone()
                 if db_tuple is not None:
                     original_file_name = escape(db_tuple[0])
-                    if original_file_name[-4:].lower() == '.ulg':
-                        original_file_name = original_file_name[:-4]
+                    original_file_name = os.path.splitext(original_file_name)[0]
                     return original_file_name + new_file_suffix
                 cur.close()
                 con.close()
@@ -60,7 +59,7 @@ class DownloadHandler(TornadoRequestHandlerBase):
             return default_value
 
         if download_type == '1': # download the parameters
-            ulog = load_ulog_file(log_file_name)
+            ulog = load_log_file(log_file_name)
             param_keys = sorted(ulog.initial_parameters.keys())
 
             self.set_header('Content-Type', 'application/octet-stream')
@@ -88,6 +87,10 @@ class DownloadHandler(TornadoRequestHandlerBase):
                 self.write('\n')
 
         elif download_type == '2': # download the kml file
+            # KML conversion supports ULog only
+            if os.path.splitext(log_file_name)[1].lower() != '.ulg':
+                raise CustomHTTPError(400, 'KML export is only available for PX4 .ulg logs')
+
             kml_path = get_kml_filepath()
             kml_file_name = os.path.join(kml_path, log_id.replace('/', '.')+'.kml')
 
@@ -139,7 +142,7 @@ class DownloadHandler(TornadoRequestHandlerBase):
                 self.finish()
 
         elif download_type == '3': # download the non-default parameters
-            ulog = load_ulog_file(log_file_name)
+            ulog = load_log_file(log_file_name)
             param_keys = sorted(ulog.initial_parameters.keys())
 
             self.set_header('Content-Type', 'application/octet-stream')

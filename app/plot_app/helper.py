@@ -69,12 +69,37 @@ def validate_log_id(log_id):
     return False
 
 def get_log_filename(log_id):
-    """ return the ulog file name from a log id in the form:
-        xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    """Return a log file path for a given log id.
+
+    Historically logs were stored as <id>.ulg. With multi-format support we
+    may store other extensions (e.g. .bin, .csv). This function will return the
+    first existing file for known extensions, falling back to .ulg.
     """
     if _check_log_id_is_filename():
         return log_id
-    return os.path.join(get_log_filepath(), log_id + '.ulg')
+
+    base = os.path.join(get_log_filepath(), log_id)
+    # Prefer .ulg to keep legacy behavior stable.
+    for ext in ('.ulg', '.bin', '.csv', '.bbl', '.txt'):
+        candidate = base + ext
+        if os.path.exists(candidate):
+            return candidate
+    return base + '.ulg'
+
+
+def get_log_filename_with_ext(log_id: str, ext: str) -> str:
+    """Return the target log file path for a given id and extension."""
+    if _check_log_id_is_filename():
+        return log_id
+    if not ext.startswith('.'):
+        ext = '.' + ext
+    return os.path.join(get_log_filepath(), log_id + ext)
+
+
+def load_log_file(file_name: str):
+    """Load a log file of supported formats and return a ULog-like object."""
+    from logs.loader import load_log
+    return load_log(file_name)
 
 
 __last_failed_downloads = {} # dict with key=file name and a timestamp of last failed download

@@ -104,7 +104,7 @@ def main():
             os.makedirs(args.download_folder)
 
         # find already existing logs in download folder
-        logfile_pattern = os.path.join(os.path.abspath(args.download_folder), "*.ulg")
+        logfile_pattern = os.path.join(os.path.abspath(args.download_folder), "*.*")
         logfiles = glob.glob(os.path.join(os.getcwd(), logfile_pattern))
         logids = frozenset(os.path.splitext(os.path.basename(f))[0] for f in logfiles)
 
@@ -215,13 +215,22 @@ def main():
             for num_tries in range(100):
                 try:
                     if args.overwrite or entry_id not in logids:
-
-                        file_path = os.path.join(args.download_folder, entry_id + ".ulg")
-
                         print('downloading {:}/{:} ({:})'.format(i + 1, n_en, entry_id))
                         request = requests.get(url=args.download_api +
                                                "?log=" + entry_id, stream=True,
                                                timeout=10*60)
+
+                        # Preserve the server-provided filename (and extension)
+                        filename = None
+                        content_disposition = request.headers.get('Content-Disposition', '')
+                        if 'filename=' in content_disposition:
+                            filename = (
+                                content_disposition.split('filename=')[-1]
+                                .strip().strip('"').strip("'"))
+                        if not filename:
+                            filename = entry_id + ".ulg"
+
+                        file_path = os.path.join(args.download_folder, filename)
                         with open(file_path, 'wb') as log_file:
                             for chunk in request.iter_content(chunk_size=1024):
                                 if chunk:  # filter out keep-alive new chunks

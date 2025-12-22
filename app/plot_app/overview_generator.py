@@ -9,8 +9,8 @@ matplotlib.use('Agg')
 import smopy
 import matplotlib.pyplot as plt
 
-from config import get_log_filepath, get_overview_img_filepath
-from helper import load_ulog_file, get_lat_lon_alt_deg
+from config import get_overview_img_filepath
+from helper import get_log_filename, load_log_file, get_lat_lon_alt_deg
 
 MAXTILES = 16
 def get_zoom(input_box, z=18):
@@ -27,8 +27,8 @@ def get_zoom(input_box, z=18):
 def generate_overview_img_from_id(log_id):
     ''' This function will load file and save overview from/into configured directories
         '''
-    ulog_file = os.path.join(get_log_filepath(), log_id+'.ulg')
-    ulog = load_ulog_file(ulog_file)
+    ulog_file = get_log_filename(log_id)
+    ulog = load_log_file(ulog_file)
     generate_overview_img(ulog, log_id)
 
 def generate_overview_img(ulog, log_id):

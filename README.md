@@ -1,7 +1,7 @@
 # Flight Review
 
 This is a web application for flight log analysis. It allows users to upload
-ULog flight logs, and analyze them through the browser.
+flight logs and analyze them through the browser.
 
 It uses the [bokeh](http://bokeh.pydata.org) library for plotting and the
 [Tornado Web Server](http://www.tornadoweb.org).
@@ -82,7 +82,7 @@ without having to upload it first:
 
 ```bash
 cd app
-./serve.py -f <file.ulg>
+./serve.py -f <file.ulg|file.bin|file.csv>
 ```
 
 To start the whole web application:
@@ -102,7 +102,7 @@ To upload one or more logs from command line, use
 [`PX4-Autopilot/Tools/upload_log.py`](https://github.com/PX4/PX4-Autopilot/blob/main/Tools/upload_log.py)
 ```bash
 cd PX4-Autopilot/Tools
-./upload_log.py --quiet --server=http://localhost:5006 <file.ulg>
+./upload_log.py --quiet --server=http://localhost:5006 <file.ulg|file.bin|file.csv>
 ```
 
 ## Interactive Usage

@@ -5,7 +5,8 @@ from html import escape
 from pyulog import *
 from pyulog.px4 import *
 
-from helper import get_log_filename, load_ulog_file
+from helper import get_log_filename, load_log_file
+from logs.px4_ulog_compat import PX4ULogCompat
 
 #pylint: disable=missing-docstring, too-few-public-methods
 
@@ -89,8 +90,12 @@ class DBDataGenerated:
         obj = cls()
 
         ulog_file_name = get_log_filename(log_id)
-        ulog = load_ulog_file(ulog_file_name)
-        px4_ulog = PX4ULog(ulog)
+        ulog = load_log_file(ulog_file_name)
+        try:
+            px4_ulog = PX4ULog(ulog)
+        except Exception:
+            px4_ulog = PX4ULogCompat(
+                ulog, source_name=str(ulog.msg_info_dict.get('sys_name', 'Log')))
 
         # extract information
         obj.duration_s = int((ulog.last_timestamp - ulog.start_timestamp)/1e6)

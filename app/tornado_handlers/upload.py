@@ -24,8 +24,11 @@ from db_entry import DBVehicleData, DBData
 from config import get_db_filename, get_http_protocol, get_domain_name, \
     email_notifications_config, get_ulge_private_key_path
 from helper import get_total_flight_time, validate_url, get_log_filename, \
-    load_ulog_file, get_airframe_name, ULogException, decrypt_ulge_payload
+    get_log_filename_with_ext, load_log_file, get_airframe_name, ULogException, decrypt_ulge_payload
 from overview_generator import generate_overview_img_from_id
+
+from logs.px4_ulog_compat import PX4ULogCompat
+from logs.loader import UnsupportedLogFormat
 
 
 #pylint: disable=relative-beyond-top-level
@@ -124,11 +127,11 @@ class UploadHandler(TornadoRequestHandlerBase):
                                    initial_email=initial_email,
                                    is_plot_page=False)
 
-    def _generate_unique_log_filename(self):
-        """Generate a unique log filename that does not exist yet."""
+    def _generate_unique_log_filename(self, ext: str):
+        """Generate a unique log filename (with extension) that does not exist yet."""
         while True:
             log_id = str(uuid.uuid4())
-            new_file_name = get_log_filename(log_id)
+            new_file_name = get_log_filename_with_ext(log_id, ext)
             if not os.path.exists(new_file_name):
                 return log_id, new_file_name
 
@@ -210,10 +213,11 @@ class UploadHandler(TornadoRequestHandlerBase):
                     raise CustomHTTPError(400, "No file uploaded")
                 file_obj = parts[0]
                 upload_file_name = file_obj.get_filename()
+                upload_file_name_lower = (upload_file_name or '').lower()
 
                 # check if the file is encrypted
                 ulge_key_path = get_ulge_private_key_path()
-                if ulge_key_path and upload_file_name.lower().endswith('.ulge'):
+                if ulge_key_path and upload_file_name_lower.endswith('.ulge'):
                     file_payload = file_obj.get_payload()  # full content as bytes
                     try:
                         decrypted_data = decrypt_ulge_payload(
@@ -228,7 +232,7 @@ class UploadHandler(TornadoRequestHandlerBase):
                         raise CustomHTTPError(400, "Decrypted file is not a valid ULog")
 
                     # Write decrypted .ulg to disk
-                    log_id, new_file_name = self._generate_unique_log_filename()
+                    log_id, new_file_name = self._generate_unique_log_filename('.ulg')
 
                     with open(new_file_name, 'wb') as output_file:
                         output_file.write(decrypted_data)
@@ -236,12 +240,27 @@ class UploadHandler(TornadoRequestHandlerBase):
                     print(f"Decryption successful for {upload_file_name}, saved to {new_file_name}")
 
                 else:
-                    # Regular .ulg file
-                    log_id, new_file_name = self._generate_unique_log_filename()
+                    # Regular file: support .ulg, ArduPilot .bin, Betaflight CSV
+                    if upload_file_name_lower.endswith('.bin'):
+                        ext = '.bin'
+                    elif upload_file_name_lower.endswith('.csv'):
+                        ext = '.csv'
+                    elif upload_file_name_lower.endswith('.bbl') or upload_file_name_lower.endswith('.txt'):
+                        # Accept upload but provide a clear error message.
+                        raise CustomHTTPError(
+                            400,
+                            'Betaflight Blackbox binary logs (.bbl/.txt) are not directly supported yet. '
+                            'Please export to CSV using Blackbox Explorer and upload the CSV.'
+                        )
+                    else:
+                        ext = '.ulg'
 
-                    header_len = len(ULog.HEADER_BYTES)
-                    if file_obj.get_payload_partial(header_len) != ULog.HEADER_BYTES:
-                        raise CustomHTTPError(400, 'Invalid File')
+                    log_id, new_file_name = self._generate_unique_log_filename(ext)
+
+                    if ext == '.ulg':
+                        header_len = len(ULog.HEADER_BYTES)
+                        if file_obj.get_payload_partial(header_len) != ULog.HEADER_BYTES:
+                            raise CustomHTTPError(400, 'Invalid File')
 
                     print('Moving uploaded file to', new_file_name)
                     file_obj.move(new_file_name)
@@ -259,7 +278,10 @@ class UploadHandler(TornadoRequestHandlerBase):
                 if source != 'CI':
                     ulog_file_name = get_log_filename(log_id)
                     # Run heavy parsing in a separate thread to avoid blocking the event loop
-                    ulog = await IOLoop.current().run_in_executor(None, load_ulog_file, ulog_file_name)
+                    try:
+                        ulog = await IOLoop.current().run_in_executor(None, load_log_file, ulog_file_name)
+                    except UnsupportedLogFormat as e:
+                        raise CustomHTTPError(400, str(e)) from e
 
                 # put additional data into a DB
                 con = sqlite3.connect(get_db_filename())
@@ -306,7 +328,10 @@ class UploadHandler(TornadoRequestHandlerBase):
                     info['vehicle_name'] = vehicle_name
 
                 if ulog is not None:
-                    px4_ulog = PX4ULog(ulog)
+                    try:
+                        px4_ulog = PX4ULog(ulog)
+                    except Exception:
+                        px4_ulog = PX4ULogCompat(ulog, source_name=str(ulog.msg_info_dict.get('sys_name', 'Log')))
                     info['type'] = px4_ulog.get_mav_type()
                     airframe_name_tuple = get_airframe_name(ulog)
                     if airframe_name_tuple is not None:

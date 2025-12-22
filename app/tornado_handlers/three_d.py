@@ -11,7 +11,7 @@ import numpy as np
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
 from config import get_cesium_api_key, get_cesium_enable_bing_aerial
-from helper import validate_log_id, get_log_filename, load_ulog_file, \
+from helper import validate_log_id, get_log_filename, load_log_file, \
     get_flight_mode_changes, flight_modes_table, get_lat_lon_alt_deg
 
 #pylint: disable=relative-beyond-top-level
@@ -33,7 +33,7 @@ class ThreeDHandler(TornadoRequestHandlerBase):
         if not validate_log_id(log_id):
             raise tornado.web.HTTPError(400, 'Invalid Parameter')
         log_file_name = get_log_filename(log_id)
-        ulog = load_ulog_file(log_file_name)
+        ulog = load_log_file(log_file_name)
 
         # extract the necessary information from the log
 

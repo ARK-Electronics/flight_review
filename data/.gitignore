@@ -1,5 +1,5 @@
 
-log_files/*-*-*-*-*.ulg
+log_files/*-*-*-*-*.*
 airframes.xml
 
 /cache/

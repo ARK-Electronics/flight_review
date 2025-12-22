@@ -49,8 +49,9 @@ parser.add_argument('-s', '--show', dest='show', action='store_true',
                     help='Open browser on startup')
 parser.add_argument('--use-xheaders', action='store_true',
                     help="Prefer X-headers for IP/protocol information")
-parser.add_argument('-f', '--file', metavar='file.ulg', action='store',
-                    help='Directly show an ULog file, only for local use (implies -s)',
+parser.add_argument('-f', '--file', metavar='file.<ext>', action='store',
+                help='Directly show a log file (.ulg/.bin/.csv), only for local '
+                    'use (implies -s)',
                     default=None)
 parser.add_argument('--3d', dest='threed', action='store_true',
                     help='Open 3D page (only if --file is provided)')
