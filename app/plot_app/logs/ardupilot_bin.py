@@ -11,11 +11,60 @@ Notes:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import io
+import os
+import contextlib
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from .compat_ulog import CompatDataset, CompatULog
+
+
+class _CappedTextIO(io.TextIOBase):
+    """Text sink that captures up to N characters then discards the rest."""
+
+    def __init__(self, cap_chars: int = 4096):
+        super().__init__()
+        self._cap = int(cap_chars)
+        self._buf = io.StringIO()
+        self._len = 0
+
+    def write(self, s: str) -> int:
+        if not s:
+            return 0
+        if self._len < self._cap:
+            remaining = self._cap - self._len
+            chunk = s[:remaining]
+            self._buf.write(chunk)
+            self._len += len(chunk)
+        return len(s)
+
+    def getvalue(self) -> str:
+        return self._buf.getvalue()
+
+
+def _looks_like_dataflash_bin(path: str) -> bool:
+    """Heuristic check to avoid feeding non-logs into DFReader.
+
+    DataFlash binary logs are delimited by a 2-byte sync marker 0xA3 0x95.
+    If it's not present near the start, pymavlink will emit thousands of
+    'bad header' lines while scanning.
+    """
+
+    try:
+        if os.path.getsize(path) < 64:
+            return False
+        with open(path, 'rb') as f:
+            head = f.read(32768)
+        # Sync marker must appear near the start.
+        if not ((b'\xA3\x95' in head) or (b'\x95\xA3' in head)):
+            return False
+        # Most valid DataFlash logs include FMT definitions very early; requiring this
+        # avoids feeding random binaries into DFReader (which can be very noisy).
+        return b'FMT' in head
+    except Exception:
+        return False
 
 
 def _msg_time_us(msg: Any) -> Optional[int]:
@@ -69,6 +118,12 @@ def _quat_from_rpy(roll: np.ndarray, pitch: np.ndarray, yaw: np.ndarray) -> Tupl
 def read_ardupilot_bin(path: str) -> CompatULog:
     """Parse a DataFlash .bin log and return a CompatULog."""
 
+    if not _looks_like_dataflash_bin(path):
+        raise ValueError(
+            'File does not look like an ArduPilot DataFlash .bin log '
+            '(missing sync marker 0xA395 and/or early FMT definitions).'
+        )
+
     try:
         from pymavlink import DFReader  # local import for optional dependency
     except ModuleNotFoundError as e:
@@ -78,7 +133,134 @@ def read_ardupilot_bin(path: str) -> CompatULog:
             'Install it (pip install pymavlink) or rebuild the Docker image with it installed.'
         ) from e
 
-    reader = DFReader.DFReader_binary(path)
+    # NOTE: pymavlink can use a Cython fast-indexer (dfindexer) which has, in some
+    # cases, been observed to terminate the process on malformed logs. For server
+    # robustness we force the legacy (pure-Python) indexer for parsing.
+    reader_out = _CappedTextIO(4096)
+    reader_err = _CappedTextIO(4096)
+
+    orig_fast_index = os.environ.get('PYMAVLINK_FAST_INDEX')
+    os.environ['PYMAVLINK_FAST_INDEX'] = '0'
+    try:
+        with contextlib.redirect_stdout(reader_out), contextlib.redirect_stderr(reader_err):
+            reader = DFReader.DFReader_binary(path)
+
+            while True:
+                msg = reader.recv_msg()
+                if msg is None:
+                    break
+                mtype = msg.get_type()
+                t_us = _msg_time_us(msg)
+                if t_us is None:
+                    continue
+
+                if mtype in ('ATT', 'AHR2'):
+                    # ATT: Roll,Pitch,Yaw in degrees (typically)
+                    if hasattr(msg, 'Roll') and hasattr(msg, 'Pitch') and hasattr(msg, 'Yaw'):
+                        att_t.append(t_us)
+                        att_roll.append(float(getattr(msg, 'Roll')))
+                        att_pitch.append(float(getattr(msg, 'Pitch')))
+                        att_yaw.append(float(getattr(msg, 'Yaw')))
+                    elif hasattr(msg, 'roll') and hasattr(msg, 'pitch') and hasattr(msg, 'yaw'):
+                        att_t.append(t_us)
+                        att_roll.append(float(getattr(msg, 'roll')))
+                        att_pitch.append(float(getattr(msg, 'pitch')))
+                        att_yaw.append(float(getattr(msg, 'yaw')))
+
+                elif mtype in ('IMU', 'IMU2', 'IMU3'):
+                    # IMU: GyrX/Y/Z are usually deg/s
+                    gx = getattr(msg, 'GyrX', None)
+                    gy = getattr(msg, 'GyrY', None)
+                    gz = getattr(msg, 'GyrZ', None)
+                    if gx is not None and gy is not None and gz is not None:
+                        gyro_t.append(t_us)
+                        gyro_x.append(float(gx))
+                        gyro_y.append(float(gy))
+                        gyro_z.append(float(gz))
+
+                elif mtype in ('GYR', 'GYR2', 'GYR3'):
+                    # Some logs have GYR in rad/s or deg/s; we treat as deg/s if magnitude looks like deg/s.
+                    gx = getattr(msg, 'GyrX', None)
+                    if gx is None:
+                        gx = getattr(msg, 'X', None)
+                    gy = getattr(msg, 'GyrY', None)
+                    if gy is None:
+                        gy = getattr(msg, 'Y', None)
+                    gz = getattr(msg, 'GyrZ', None)
+                    if gz is None:
+                        gz = getattr(msg, 'Z', None)
+                    if gx is not None and gy is not None and gz is not None:
+                        gyro_t.append(t_us)
+                        gyro_x.append(float(gx))
+                        gyro_y.append(float(gy))
+                        gyro_z.append(float(gz))
+
+                elif mtype in ('GPS', 'GPS2'):
+                    lat = getattr(msg, 'Lat', None)
+                    lon = getattr(msg, 'Lng', None)
+                    alt = getattr(msg, 'Alt', None)
+                    fix = getattr(msg, 'Status', None)
+                    if lat is not None and lon is not None and alt is not None:
+                        # ArduPilot logs may store Lat/Lng either as degrees*1e7 (int)
+                        # or as plain degrees (int/float). PX4 expects degrees*1e7 ints.
+                        try:
+                            lat_v = float(lat)
+                            lon_v = float(lon)
+                            if abs(lat_v) < 1000.0 and abs(lon_v) < 1000.0:
+                                lat_i = int(round(lat_v * 1e7))
+                                lon_i = int(round(lon_v * 1e7))
+                            else:
+                                lat_i = int(round(lat_v))
+                                lon_i = int(round(lon_v))
+                        except Exception:
+                            continue
+                        gps_t.append(t_us)
+                        gps_lat.append(lat_i)
+                        gps_lon.append(lon_i)
+                        gps_alt_m.append(float(alt))
+                        gps_fix.append(int(fix) if fix is not None else 0)
+
+                elif mtype == 'RCIN':
+                    # RCIN: C1..C16 PWM
+                    chans: List[int] = []
+                    for i in range(1, 17):
+                        v = getattr(msg, f'C{i}', None)
+                        if v is None:
+                            break
+                        chans.append(int(v))
+                    if chans:
+                        rcin_t.append(t_us)
+                        rcin.append(chans)
+
+                elif mtype == 'RCOU':
+                    # RCOU: C1..C16 PWM outputs
+                    chans = []
+                    for i in range(1, 17):
+                        v = getattr(msg, f'C{i}', None)
+                        if v is None:
+                            break
+                        chans.append(int(v))
+                    if chans:
+                        rcou_t.append(t_us)
+                        rcou.append(chans)
+
+                elif mtype in ('BAT', 'BATT'):
+                    # BAT: Volt, Curr
+                    v = getattr(msg, 'Volt', None)
+                    if v is None:
+                        v = getattr(msg, 'V', None)
+                    c = getattr(msg, 'Curr', None)
+                    if c is None:
+                        c = getattr(msg, 'I', None)
+                    if v is not None:
+                        bat_t.append(t_us)
+                        bat_v.append(float(v))
+                        bat_a.append(float(c) if c is not None else 0.0)
+    finally:
+        if orig_fast_index is None:
+            os.environ.pop('PYMAVLINK_FAST_INDEX', None)
+        else:
+            os.environ['PYMAVLINK_FAST_INDEX'] = orig_fast_index
 
     # Raw accumulators
     att_t: List[int] = []
@@ -109,117 +291,7 @@ def read_ardupilot_bin(path: str) -> CompatULog:
 
     # Iterate messages
     # DFReader_binary is not guaranteed to be directly iterable across pymavlink versions.
-    while True:
-        msg = reader.recv_msg()
-        if msg is None:
-            break
-        mtype = msg.get_type()
-        t_us = _msg_time_us(msg)
-        if t_us is None:
-            continue
-
-        if mtype in ('ATT', 'AHR2'):
-            # ATT: Roll,Pitch,Yaw in degrees (typically)
-            if hasattr(msg, 'Roll') and hasattr(msg, 'Pitch') and hasattr(msg, 'Yaw'):
-                att_t.append(t_us)
-                att_roll.append(float(getattr(msg, 'Roll')))
-                att_pitch.append(float(getattr(msg, 'Pitch')))
-                att_yaw.append(float(getattr(msg, 'Yaw')))
-            elif hasattr(msg, 'roll') and hasattr(msg, 'pitch') and hasattr(msg, 'yaw'):
-                att_t.append(t_us)
-                att_roll.append(float(getattr(msg, 'roll')))
-                att_pitch.append(float(getattr(msg, 'pitch')))
-                att_yaw.append(float(getattr(msg, 'yaw')))
-
-        elif mtype in ('IMU', 'IMU2', 'IMU3'):
-            # IMU: GyrX/Y/Z are usually deg/s
-            gx = getattr(msg, 'GyrX', None)
-            gy = getattr(msg, 'GyrY', None)
-            gz = getattr(msg, 'GyrZ', None)
-            if gx is not None and gy is not None and gz is not None:
-                gyro_t.append(t_us)
-                gyro_x.append(float(gx))
-                gyro_y.append(float(gy))
-                gyro_z.append(float(gz))
-
-        elif mtype in ('GYR', 'GYR2', 'GYR3'):
-            # Some logs have GYR in rad/s or deg/s; we treat as deg/s if magnitude looks like deg/s.
-            gx = getattr(msg, 'GyrX', None)
-            if gx is None:
-                gx = getattr(msg, 'X', None)
-            gy = getattr(msg, 'GyrY', None)
-            if gy is None:
-                gy = getattr(msg, 'Y', None)
-            gz = getattr(msg, 'GyrZ', None)
-            if gz is None:
-                gz = getattr(msg, 'Z', None)
-            if gx is not None and gy is not None and gz is not None:
-                gyro_t.append(t_us)
-                gyro_x.append(float(gx))
-                gyro_y.append(float(gy))
-                gyro_z.append(float(gz))
-
-        elif mtype in ('GPS', 'GPS2'):
-            lat = getattr(msg, 'Lat', None)
-            lon = getattr(msg, 'Lng', None)
-            alt = getattr(msg, 'Alt', None)
-            fix = getattr(msg, 'Status', None)
-            if lat is not None and lon is not None and alt is not None:
-                # ArduPilot logs may store Lat/Lng either as degrees*1e7 (int)
-                # or as plain degrees (int/float). PX4 expects degrees*1e7 ints.
-                try:
-                    lat_v = float(lat)
-                    lon_v = float(lon)
-                    if abs(lat_v) < 1000.0 and abs(lon_v) < 1000.0:
-                        lat_i = int(round(lat_v * 1e7))
-                        lon_i = int(round(lon_v * 1e7))
-                    else:
-                        lat_i = int(round(lat_v))
-                        lon_i = int(round(lon_v))
-                except Exception:
-                    continue
-                gps_t.append(t_us)
-                gps_lat.append(lat_i)
-                gps_lon.append(lon_i)
-                gps_alt_m.append(float(alt))
-                gps_fix.append(int(fix) if fix is not None else 0)
-
-        elif mtype == 'RCIN':
-            # RCIN: C1..C16 PWM
-            chans: List[int] = []
-            for i in range(1, 17):
-                v = getattr(msg, f'C{i}', None)
-                if v is None:
-                    break
-                chans.append(int(v))
-            if chans:
-                rcin_t.append(t_us)
-                rcin.append(chans)
-
-        elif mtype == 'RCOU':
-            # RCOU: C1..C16 PWM outputs
-            chans = []
-            for i in range(1, 17):
-                v = getattr(msg, f'C{i}', None)
-                if v is None:
-                    break
-                chans.append(int(v))
-            if chans:
-                rcou_t.append(t_us)
-                rcou.append(chans)
-
-        elif mtype in ('BAT', 'BATT'):
-            # BAT: Volt, Curr
-            v = getattr(msg, 'Volt', None)
-            if v is None:
-                v = getattr(msg, 'V', None)
-            c = getattr(msg, 'Curr', None)
-            if c is None:
-                c = getattr(msg, 'I', None)
-            if v is not None:
-                bat_t.append(t_us)
-                bat_v.append(float(v))
-                bat_a.append(float(c) if c is not None else 0.0)
+    # Note: message parsing happens in the guarded block above.
 
     # Build datasets
     datasets: List[CompatDataset] = []
@@ -462,8 +534,13 @@ def read_ardupilot_bin(path: str) -> CompatULog:
         )
 
     if not datasets:
-        # Empty log
-        return CompatULog([], 0, 0, msg_info_dict={'sys_name': 'ArduPilot'})
+        captured = (reader_err.getvalue() + reader_out.getvalue()).strip()
+        if captured:
+            # Don't spam logs; show a short summary to the user instead.
+            captured_lines = captured.splitlines()[:3]
+            detail = " / ".join(l.strip() for l in captured_lines if l.strip())
+            raise ValueError(f'Failed to parse ArduPilot DataFlash .bin log: {detail}')
+        raise ValueError('Failed to parse ArduPilot DataFlash .bin log: no supported messages found.')
 
     # Determine start/end
     all_ts = np.concatenate([d.data['timestamp'].astype(np.int64) for d in datasets if 'timestamp' in d.data])
