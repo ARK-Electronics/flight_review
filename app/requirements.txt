@@ -11,3 +11,4 @@ smopy
 pycryptodome>=3.18
 passlib
 bcrypt==3.2.2
+pymavlink

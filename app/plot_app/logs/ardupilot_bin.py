@@ -69,7 +69,14 @@ def _quat_from_rpy(roll: np.ndarray, pitch: np.ndarray, yaw: np.ndarray) -> Tupl
 def read_ardupilot_bin(path: str) -> CompatULog:
     """Parse a DataFlash .bin log and return a CompatULog."""
 
-    from pymavlink import DFReader  # local import for optional dependency
+    try:
+        from pymavlink import DFReader  # local import for optional dependency
+    except ModuleNotFoundError as e:
+        # Keep this as a user-facing error (upload handler shows exception message)
+        raise ValueError(
+            'ArduPilot .bin logs require the optional dependency "pymavlink". '
+            'Install it (pip install pymavlink) or rebuild the Docker image with it installed.'
+        ) from e
 
     reader = DFReader.DFReader_binary(path)
 
