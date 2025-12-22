@@ -412,6 +412,9 @@ def read_ardupilot_bin(path: str) -> CompatULog:
         out = np.clip((chans - 1000.0) / 1000.0, 0.0, 1.0)
         act_data: Dict[str, np.ndarray] = {'timestamp': t}
         num = min(out.shape[1], 12)
+        # PX4 actuator_outputs includes noutputs (number of valid outputs).
+        # Some plots rely on this to decide how many channels to render.
+        act_data['noutputs'] = np.full(len(t), num, dtype=np.int32)
         for i in range(num):
             act_data[f'output[{i}]'] = out[:, i]
         datasets.append(CompatDataset('actuator_outputs', act_data))
