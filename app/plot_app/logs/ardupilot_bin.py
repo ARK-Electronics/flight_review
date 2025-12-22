@@ -165,9 +165,22 @@ def read_ardupilot_bin(path: str) -> CompatULog:
             alt = getattr(msg, 'Alt', None)
             fix = getattr(msg, 'Status', None)
             if lat is not None and lon is not None and alt is not None:
+                # ArduPilot logs may store Lat/Lng either as degrees*1e7 (int)
+                # or as plain degrees (int/float). PX4 expects degrees*1e7 ints.
+                try:
+                    lat_v = float(lat)
+                    lon_v = float(lon)
+                    if abs(lat_v) < 1000.0 and abs(lon_v) < 1000.0:
+                        lat_i = int(round(lat_v * 1e7))
+                        lon_i = int(round(lon_v * 1e7))
+                    else:
+                        lat_i = int(round(lat_v))
+                        lon_i = int(round(lon_v))
+                except Exception:
+                    continue
                 gps_t.append(t_us)
-                gps_lat.append(int(lat))
-                gps_lon.append(int(lon))
+                gps_lat.append(lat_i)
+                gps_lon.append(lon_i)
                 gps_alt_m.append(float(alt))
                 gps_fix.append(int(fix) if fix is not None else 0)
 

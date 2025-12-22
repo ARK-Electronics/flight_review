@@ -88,6 +88,10 @@ class CompatULog:
         self.start_timestamp = int(start_timestamp)
         self.last_timestamp = int(last_timestamp)
         self.msg_info_dict: Dict[str, Any] = dict(msg_info_dict or {})
+        # pyulog provides both msg_info_dict (single value per key) and
+        # msg_info_multiple_dict (list of values per key). Some UI elements
+        # check the latter for hardfault/console outputs.
+        self.msg_info_multiple_dict: Dict[str, List[Any]] = {}
         self.initial_parameters: Dict[str, Any] = dict(initial_parameters or {})
 
         self.dropouts: List[CompatDropout] = []
