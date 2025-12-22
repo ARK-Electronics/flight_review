@@ -409,7 +409,8 @@ def get_hardfault_html(ulog):
     Get the html (as string) for hardfault information,
     if the log contains any, otherwise returns None
     """
-    if 'hardfault_plain' in ulog.msg_info_multiple_dict:
+    msg_info_multiple_dict = getattr(ulog, 'msg_info_multiple_dict', {})
+    if 'hardfault_plain' in msg_info_multiple_dict:
 
         hardfault_html = """
 <div class="card text-white bg-danger mb-3">
@@ -429,7 +430,7 @@ def get_hardfault_html(ulog):
 """
 
         counter = 1
-        for hardfault in ulog.msg_info_multiple_dict['hardfault_plain']:
+        for hardfault in msg_info_multiple_dict['hardfault_plain']:
             hardfault_text = escape(''.join(hardfault)).replace('\n', '<br/>')
             hardfault_html += ('<p>Hardfault #'+str(counter)+':<br/><pre>'+
                                hardfault_text+'</pre></p>')
