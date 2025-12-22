@@ -98,6 +98,10 @@ class CompatULog:
         self.changed_parameters: List[Tuple[int, str, Any]] = []
         self.logged_messages: List[CompatMessage] = list(logged_messages or [])
 
+        # pyulog sets this when it detects corruption while parsing.
+        # For non-ULog sources, default to "not corrupt".
+        self.file_corruption = False
+
         self.has_default_parameters = False
 
     def get_dataset(self, name: str, instance: int = 0) -> CompatDataset:

@@ -385,7 +385,7 @@ def get_corrupt_log_html(ulog):
     Get the html (as string) for corrupt logs,
     if the log is corrupt, otherwise returns None
     """
-    if ulog.file_corruption:
+    if getattr(ulog, 'file_corruption', False):
         corrupt_log_html = """
 <div class="card text-white bg-danger mb-3">
   <div class="card-header">Warning</div>
