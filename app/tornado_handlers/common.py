@@ -44,6 +44,20 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
     def render_jinja(self, template_name, **kwargs):
         template = get_jinja_env().get_template(template_name)
         kwargs['current_user'] = self.get_current_user()
+        # Auto-inject is_admin for navbar rendering
+        if 'is_admin' not in kwargs and kwargs['current_user']:
+            try:
+                con = sqlite3.connect(get_db_filename())
+                cur = con.cursor()
+                cur.execute("SELECT IsAdmin FROM Users WHERE Username=?",
+                            (kwargs['current_user'],))
+                row = cur.fetchone()
+                kwargs['is_admin'] = bool(row and row[0])
+                con.close()
+            except Exception:
+                kwargs['is_admin'] = False
+        elif 'is_admin' not in kwargs:
+            kwargs['is_admin'] = False
         self.write(template.render(**kwargs))
 
     def write_error(self, status_code, **kwargs):

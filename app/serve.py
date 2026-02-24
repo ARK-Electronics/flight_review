@@ -28,6 +28,7 @@ from tornado_handlers.three_d import ThreeDHandler
 from tornado_handlers.radio_controller import RadioControllerHandler
 from tornado_handlers.error_labels import UpdateErrorLabelHandler
 from tornado_handlers.auth import LoginHandler, LogoutHandler, RegisterHandler, ApproveUserHandler, ForgotPasswordHandler, ResetPasswordHandler
+from tornado_handlers.admin import AdminUsersHandler, AdminUsersAPIHandler
 
 from helper import set_log_id_is_filename, print_cache_info #pylint: disable=C0411
 from config import debug_print_timing, get_overview_img_filepath, get_domain_name #pylint: disable=C0411
@@ -147,6 +148,8 @@ extra_patterns = [
     (r'/approve_user', ApproveUserHandler),
     (r'/forgot_password', ForgotPasswordHandler),
     (r'/reset_password', ResetPasswordHandler),
+    (r'/admin', AdminUsersHandler),
+    (r'/admin/api', AdminUsersAPIHandler),
     (r"/stats", RedirectHandler, {"url": "/plot_app?stats=1"}),
     (r'/overview_img/(.*)', StaticFileHandler, {'path': get_overview_img_filepath()}),
 ]

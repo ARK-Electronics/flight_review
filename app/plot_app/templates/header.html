@@ -50,6 +50,9 @@
 			{% endif %}
 					<li class="nav-item"><a class="nav-link" href="browse">Browse</a></li>
 					{% if current_user %}
+						{% if is_admin %}
+						<li class="nav-item"><a class="nav-link" href="/admin">Admin</a></li>
+						{% endif %}
 						<li class="nav-item"><a class="nav-link" href="/logout">Logout ({{ current_user }})</a></li>
 					{% else %}
 						<li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
