@@ -85,7 +85,7 @@ estimation problems that may need parameter tuning.
             # Add threshold line at 1.0
             plot_flight_modes_background(data_plot, flight_mode_changes)
             if data_plot.finalize() is not None:
-                plots.append(data_plot)
+                plots.append(data_plot.bokeh_plot)
 
             # Position innovation test ratio
             data_plot = DataPlot(data, plot_config, 'estimator_status',
@@ -97,7 +97,7 @@ estimation problems that may need parameter tuning.
                                     ['Position Test Ratio'])
             plot_flight_modes_background(data_plot, flight_mode_changes)
             if data_plot.finalize() is not None:
-                plots.append(data_plot)
+                plots.append(data_plot.bokeh_plot)
 
             # Height innovation test ratio
             data_plot = DataPlot(data, plot_config, 'estimator_status',
@@ -109,7 +109,7 @@ estimation problems that may need parameter tuning.
                                     ['Height Test Ratio'])
             plot_flight_modes_background(data_plot, flight_mode_changes)
             if data_plot.finalize() is not None:
-                plots.append(data_plot)
+                plots.append(data_plot.bokeh_plot)
 
             # Magnetometer innovation test ratio
             data_plot = DataPlot(data, plot_config, 'estimator_status',
@@ -121,7 +121,7 @@ estimation problems that may need parameter tuning.
                                     ['Mag Test Ratio'])
             plot_flight_modes_background(data_plot, flight_mode_changes)
             if data_plot.finalize() is not None:
-                plots.append(data_plot)
+                plots.append(data_plot.bokeh_plot)
 
             # Airspeed test ratio (if available)
             if 'tas_test_ratio' in es_data:
@@ -133,7 +133,7 @@ estimation problems that may need parameter tuning.
                                     ['Airspeed Test Ratio'])
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Hagl test ratio (height above ground)
             if 'hagl_test_ratio' in es_data:
@@ -145,7 +145,7 @@ estimation problems that may need parameter tuning.
                                     ['HAGL Test Ratio'])
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
     except (KeyError, IndexError) as error:
         print('Error in EKF test ratio plots: ' + str(error))
@@ -180,7 +180,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(fields, field_colors, labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # GPS position innovations
             data_plot = DataPlot(data, plot_config, 'estimator_innovations',
@@ -200,7 +200,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(fields, field_colors, labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Vertical position innovation
             data_plot = DataPlot(data, plot_config, 'estimator_innovations',
@@ -226,7 +226,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(v_fields, v_colors, v_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Magnetometer innovations
             data_plot = DataPlot(data, plot_config, 'estimator_innovations',
@@ -246,7 +246,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(mag_fields, mag_colors, mag_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Heading innovation
             if 'heading' in inn_data:
@@ -257,7 +257,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(['heading'], [colors8[6]], ['Heading'])
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Optical flow innovations
             flow_fields = []
@@ -277,7 +277,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(flow_fields, flow_colors, flow_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
         else:
             # Fallback: try older estimator_innovations format or estimator_status
@@ -322,7 +322,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(vv_fields, vv_colors, vv_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Position innovation variances
             data_plot = DataPlot(data, plot_config, 'estimator_innovation_variances',
@@ -342,7 +342,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(pv_fields, pv_colors, pv_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
     except (KeyError, IndexError) as error:
         print('Error in EKF innovation variance plots: ' + str(error))
@@ -377,7 +377,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(gyro_fields, gyro_colors, gyro_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Accelerometer bias
             data_plot = DataPlot(data, plot_config, 'estimator_sensor_bias',
@@ -397,7 +397,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(accel_fields, accel_colors, accel_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Magnetometer bias
             data_plot = DataPlot(data, plot_config, 'estimator_sensor_bias',
@@ -417,7 +417,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(mag_bias_fields, mag_bias_colors, mag_bias_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
     except (KeyError, IndexError) as error:
         print('Error in EKF sensor bias plots: ' + str(error))
@@ -454,7 +454,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(q_fields, q_colors, q_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Velocity state variances
             data_plot = DataPlot(data, plot_config, 'estimator_states',
@@ -474,7 +474,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(v_fields, v_colors, v_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Position state variances
             data_plot = DataPlot(data, plot_config, 'estimator_states',
@@ -494,7 +494,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(p_fields, p_colors, p_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
     except (KeyError, IndexError) as error:
         print('Error in EKF state plots: ' + str(error))
@@ -544,7 +544,7 @@ estimation problems that may need parameter tuning.
             data_plot.add_graph(plot_data, colors8[0:len(plot_data)], plot_labels)
             plot_flight_modes_background(data_plot, flight_mode_changes)
             if data_plot.finalize() is not None:
-                plots.append(data_plot)
+                plots.append(data_plot.bokeh_plot)
 
             # Health and timeout flags
             data_plot = DataPlot(data, plot_config, 'estimator_status',
@@ -557,7 +557,7 @@ estimation problems that may need parameter tuning.
                 ['Health Flags', 'Timeout Flags'])
             plot_flight_modes_background(data_plot, flight_mode_changes)
             if data_plot.finalize() is not None:
-                plots.append(data_plot)
+                plots.append(data_plot.bokeh_plot)
 
     except (KeyError, IndexError) as error:
         print('Error in EKF flags plots: ' + str(error))
@@ -587,7 +587,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph([sat_field], [colors8[0]], ['Satellites'])
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Position accuracy
             acc_fields = []
@@ -609,7 +609,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(acc_fields, acc_colors, acc_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
             # Speed accuracy
             if 's_variance_m_s' in gps_data:
@@ -621,7 +621,7 @@ estimation problems that may need parameter tuning.
                                     ['Speed Variance'])
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
     except (KeyError, IndexError) as error:
         print('Error in GPS quality plots: ' + str(error))
@@ -653,7 +653,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(vibe_fields, vibe_colors, vibe_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
         # Also check vehicle_imu_status for clipping
         imu_status = _safe_get_dataset(ulog, 'vehicle_imu_status')
@@ -677,7 +677,7 @@ estimation problems that may need parameter tuning.
                 data_plot.add_graph(clip_fields, clip_colors, clip_labels)
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
-                    plots.append(data_plot)
+                    plots.append(data_plot.bokeh_plot)
 
     except (KeyError, IndexError) as error:
         print('Error in vibration plots: ' + str(error))
