@@ -827,7 +827,7 @@ estimation problems that may need parameter tuning.
                     div_text += (f"<li><span style='color:{color}'><b>{status}</b></span> "
                                  f"{display_name}: max={max_ratio:.3f}, mean={mean_ratio:.3f}</li>")
 
-            # Check innovation check flags
+            # Check innovation check flags (legacy) or reject fields (newer PX4)
             if 'innovation_check_flags' in es_data:
                 total_flags = np.sum(es_data['innovation_check_flags'] > 0)
                 pct_flags = 100.0 * total_flags / len(es_data['innovation_check_flags'])
@@ -835,6 +835,32 @@ estimation problems that may need parameter tuning.
                     '#e69f00' if pct_flags > 1 else '#009e73')
                 div_text += (f"<li><span style='color:{color}'><b>Innovation Rejections:</b></span> "
                              f"{pct_flags:.1f}% of samples had at least one flag set</li>")
+            else:
+                esf = _safe_get_dataset(ulog, 'estimator_status_flags')
+                if esf is not None:
+                    esf_data = esf.data
+                    reject_fields = [f for f in esf_data.keys() if f.startswith('reject_')]
+                    if reject_fields:
+                        # Combine all reject flags into one metric
+                        any_reject = np.zeros(len(esf_data['timestamp']), dtype=bool)
+                        active_rejects = []
+                        for field in reject_fields:
+                            mask = esf_data[field] >= 1
+                            if np.any(mask):
+                                pct = 100.0 * np.sum(mask) / len(mask)
+                                active_rejects.append(
+                                    (field.replace('reject_', ''), pct))
+                            any_reject |= mask
+                        pct_any = 100.0 * np.sum(any_reject) / len(any_reject)
+                        color = '#d55e00' if pct_any > 10 else (
+                            '#e69f00' if pct_any > 1 else '#009e73')
+                        div_text += (f"<li><span style='color:{color}'>"
+                                     f"<b>Innovation Rejections:</b></span> "
+                                     f"{pct_any:.1f}% of samples had at least "
+                                     f"one rejection</li>")
+                        for name, pct in sorted(active_rejects, key=lambda x: -x[1]):
+                            div_text += (f"<li style='margin-left:20px'>"
+                                         f"{name}: {pct:.1f}%</li>")
 
         div_text += "</ul>"
         div = Div(text=div_text, width=int(plot_width * 0.9))
