@@ -24,6 +24,7 @@
                     <th>Duration</th>
                     <th>Start Time</th>
                     <th>Flight Modes</th>
+                    <th>Comment</th>
                     {% if is_admin %}
                     <th>Email</th>
                     <th>Visibility</th>
@@ -40,6 +41,7 @@
                     <th><input type="text" class="form-control form-control-sm" placeholder="Duration" /></th>
                     <th><input type="text" class="form-control form-control-sm" placeholder="Start Time" /></th>
                     <th><input type="text" class="form-control form-control-sm" placeholder="Flight Modes" /></th>
+                    <th><input type="text" class="form-control form-control-sm" placeholder="Comment" /></th>
                     {% if is_admin %}
                     <th><input type="text" class="form-control form-control-sm" placeholder="Email" /></th>
                     <th><input type="text" class="form-control form-control-sm" placeholder="Visibility" /></th>
@@ -83,7 +85,8 @@
                 { "width": "5%" }, /* version */
                 { "width": "5%" }, /* duration */
                 {  }, /* start time */
-                { "width": "10%" } /* flight modes */
+                { "width": "10%" } /* flight modes */,
+                {  } /* comment */
                 {% if is_admin %}
                 , {  } /* email */
                 , {  } /* visibility */

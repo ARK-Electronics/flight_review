@@ -89,7 +89,7 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
             is_admin = True
 
         # Per-column filters from DataTables (server-side)
-        column_count = 10 + (2 if is_admin else 0)
+        column_count = 11 + (2 if is_admin else 0)
         column_filters = [
             self.get_argument(f'columns[{i}][search][value]', '').lower().strip()
             for i in range(column_count)
@@ -188,8 +188,7 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
 
             # make sure to break long descriptions w/o spaces (otherwise they
             # mess up the layout)
-            # disabled description on browse page on 2025-09-26
-            # description = html_long_word_force_break(db_data.description)
+            description = db_data.description if db_data.description else ''
 
             search_only_columns = []
 
@@ -246,7 +245,8 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
                 ver_sw,
                 duration_str,
                 start_time_str,
-                flight_modes
+                flight_modes,
+                description
             ]
             
             if is_admin:
@@ -364,6 +364,7 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
 
             # Filter values correspond to the visible table columns.
             # Column 0 (#) and 2 (Overview) are intentionally not filterable.
+            description = str(db_tuple[2] or "")
             filter_values = [
                 "",
                 log_date_str,
@@ -375,6 +376,7 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
                 str(duration_str or ""),
                 str(start_time_str or ""),
                 str(flight_modes_str or ""),
+                description,
             ]
             sort_values = [
                 0,
@@ -387,6 +389,7 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
                 duration_s,
                 start_time_utc,
                 str(flight_modes_str or ""),
+                description,
             ]
 
             if is_admin:
