@@ -93,10 +93,8 @@ def _extract_flight_summary(ulog, px4_ulog):
     modes = []
     for t, mode_id in flight_mode_changes:
         mode_name = 'Unknown'
-        for fm_id, _, fm_name in flight_modes_table:
-            if fm_id == mode_id:
-                mode_name = fm_name
-                break
+        if mode_id in flight_modes_table:
+            mode_name = flight_modes_table[mode_id][0]
         modes.append({'time_s': round(t / 1e6, 1), 'mode': mode_name})
     summary['flight_modes'] = modes
 

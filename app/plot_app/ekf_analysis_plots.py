@@ -75,56 +75,55 @@ estimation problems that may need parameter tuning.
             es_data = estimator_status.data
 
             # Velocity innovations test ratio
-            data_plot = DataPlot(data, plot_config, 'estimator_status',
-                                 y_axis_label='Ratio',
-                                 title='Velocity Innovation Test Ratio',
-                                 plot_height='small', x_range=x_range)
             if 'vel_test_ratio' in es_data:
+                data_plot = DataPlot(data, plot_config, 'estimator_status',
+                                     y_axis_label='Ratio',
+                                     title='Velocity Innovation Test Ratio',
+                                     plot_height='small', x_range=x_range)
                 data_plot.add_graph(['vel_test_ratio'], [colors8[0]],
                                     ['Velocity Test Ratio'])
-            # Add threshold line at 1.0
-            plot_flight_modes_background(data_plot, flight_mode_changes)
-            if data_plot.finalize() is not None:
-                plots.append(data_plot.bokeh_plot)
+                plot_flight_modes_background(data_plot, flight_mode_changes)
+                if data_plot.finalize() is not None:
+                    plots.append(data_plot.bokeh_plot)
 
             # Position innovation test ratio
-            data_plot = DataPlot(data, plot_config, 'estimator_status',
-                                 y_axis_label='Ratio',
-                                 title='Horizontal Position Innovation Test Ratio',
-                                 plot_height='small', x_range=x_range)
             if 'pos_test_ratio' in es_data:
+                data_plot = DataPlot(data, plot_config, 'estimator_status',
+                                     y_axis_label='Ratio',
+                                     title='Horizontal Position Innovation Test Ratio',
+                                     plot_height='small', x_range=x_range)
                 data_plot.add_graph(['pos_test_ratio'], [colors8[1]],
                                     ['Position Test Ratio'])
-            plot_flight_modes_background(data_plot, flight_mode_changes)
-            if data_plot.finalize() is not None:
-                plots.append(data_plot.bokeh_plot)
+                plot_flight_modes_background(data_plot, flight_mode_changes)
+                if data_plot.finalize() is not None:
+                    plots.append(data_plot.bokeh_plot)
 
             # Height innovation test ratio
-            data_plot = DataPlot(data, plot_config, 'estimator_status',
-                                 y_axis_label='Ratio',
-                                 title='Vertical Position Innovation Test Ratio',
-                                 plot_height='small', x_range=x_range)
             if 'hgt_test_ratio' in es_data:
+                data_plot = DataPlot(data, plot_config, 'estimator_status',
+                                     y_axis_label='Ratio',
+                                     title='Vertical Position Innovation Test Ratio',
+                                     plot_height='small', x_range=x_range)
                 data_plot.add_graph(['hgt_test_ratio'], [colors8[2]],
                                     ['Height Test Ratio'])
-            plot_flight_modes_background(data_plot, flight_mode_changes)
-            if data_plot.finalize() is not None:
-                plots.append(data_plot.bokeh_plot)
+                plot_flight_modes_background(data_plot, flight_mode_changes)
+                if data_plot.finalize() is not None:
+                    plots.append(data_plot.bokeh_plot)
 
             # Magnetometer innovation test ratio
-            data_plot = DataPlot(data, plot_config, 'estimator_status',
-                                 y_axis_label='Ratio',
-                                 title='Magnetometer Innovation Test Ratio',
-                                 plot_height='small', x_range=x_range)
             if 'mag_test_ratio' in es_data:
+                data_plot = DataPlot(data, plot_config, 'estimator_status',
+                                     y_axis_label='Ratio',
+                                     title='Magnetometer Innovation Test Ratio',
+                                     plot_height='small', x_range=x_range)
                 data_plot.add_graph(['mag_test_ratio'], [colors8[3]],
                                     ['Mag Test Ratio'])
-            plot_flight_modes_background(data_plot, flight_mode_changes)
-            if data_plot.finalize() is not None:
-                plots.append(data_plot.bokeh_plot)
+                plot_flight_modes_background(data_plot, flight_mode_changes)
+                if data_plot.finalize() is not None:
+                    plots.append(data_plot.bokeh_plot)
 
-            # Airspeed test ratio (if available)
-            if 'tas_test_ratio' in es_data:
+            # Airspeed test ratio (if available and not all NaN)
+            if 'tas_test_ratio' in es_data and np.any(np.isfinite(es_data['tas_test_ratio'])):
                 data_plot = DataPlot(data, plot_config, 'estimator_status',
                                      y_axis_label='Ratio',
                                      title='Airspeed Innovation Test Ratio',
@@ -511,40 +510,120 @@ estimation problems that may need parameter tuning.
             es_data = estimator_status.data
 
             # Innovation check flags (detailed)
-            data_plot = DataPlot(data, plot_config, 'estimator_status',
-                                 y_start=0, title='Innovation Check Flags (Detailed)',
-                                 plot_height='normal', x_range=x_range)
-            plot_data = []
-            plot_labels = []
-            input_data = [
-                ('Velocity Check', (es_data['innovation_check_flags']) & 0x1),
-                ('Horiz Position Check', (es_data['innovation_check_flags'] >> 1) & 1),
-                ('Vert Position Check', (es_data['innovation_check_flags'] >> 2) & 1),
-                ('Mag X Check', (es_data['innovation_check_flags'] >> 3) & 1),
-                ('Mag Y Check', (es_data['innovation_check_flags'] >> 4) & 1),
-                ('Mag Z Check', (es_data['innovation_check_flags'] >> 5) & 1),
-                ('Yaw Check', (es_data['innovation_check_flags'] >> 6) & 1),
-                ('Airspeed Check', (es_data['innovation_check_flags'] >> 7) & 1),
-                ('Sideslip Check', (es_data['innovation_check_flags'] >> 8) & 1),
-                ('Height to Ground Check', (es_data['innovation_check_flags'] >> 9) & 1),
-                ('Optical Flow X Check', (es_data['innovation_check_flags'] >> 10) & 1),
-                ('Optical Flow Y Check', (es_data['innovation_check_flags'] >> 11) & 1),
-            ]
-            for cur_label, cur_data in input_data:
-                if np.amax(cur_data) > 0.1:
-                    data_label = 'flag_' + str(len(plot_data))
-                    plot_data.append(lambda d, data=cur_data, label=data_label: (label, data))
-                    plot_labels.append(cur_label)
-                    if len(plot_data) >= 8:
-                        break
+            # Try legacy innovation_check_flags bitmask first, then fall back
+            # to individual reject_* fields in estimator_status_flags (newer PX4)
+            if 'innovation_check_flags' in es_data:
+                data_plot = DataPlot(data, plot_config, 'estimator_status',
+                                     y_start=0, title='Innovation Check Flags (Detailed)',
+                                     plot_height='normal', x_range=x_range)
+                plot_data = []
+                plot_labels = []
+                input_data = [
+                    ('Velocity Check', (es_data['innovation_check_flags']) & 0x1),
+                    ('Horiz Position Check', (es_data['innovation_check_flags'] >> 1) & 1),
+                    ('Vert Position Check', (es_data['innovation_check_flags'] >> 2) & 1),
+                    ('Mag X Check', (es_data['innovation_check_flags'] >> 3) & 1),
+                    ('Mag Y Check', (es_data['innovation_check_flags'] >> 4) & 1),
+                    ('Mag Z Check', (es_data['innovation_check_flags'] >> 5) & 1),
+                    ('Yaw Check', (es_data['innovation_check_flags'] >> 6) & 1),
+                    ('Airspeed Check', (es_data['innovation_check_flags'] >> 7) & 1),
+                    ('Sideslip Check', (es_data['innovation_check_flags'] >> 8) & 1),
+                    ('Height to Ground Check', (es_data['innovation_check_flags'] >> 9) & 1),
+                    ('Optical Flow X Check', (es_data['innovation_check_flags'] >> 10) & 1),
+                    ('Optical Flow Y Check', (es_data['innovation_check_flags'] >> 11) & 1),
+                ]
+                for cur_label, cur_data in input_data:
+                    if np.amax(cur_data) > 0.1:
+                        data_label = 'flag_' + str(len(plot_data))
+                        plot_data.append(lambda d, data=cur_data, label=data_label: (label, data))
+                        plot_labels.append(cur_label)
+                        if len(plot_data) >= 8:
+                            break
 
-            if len(plot_data) == 0:
-                plot_data = [lambda d: ('flags', input_data[0][1])]
-                plot_labels = ['All OK (Velocity Check shown)']
-            data_plot.add_graph(plot_data, colors8[0:len(plot_data)], plot_labels)
-            plot_flight_modes_background(data_plot, flight_mode_changes)
-            if data_plot.finalize() is not None:
-                plots.append(data_plot.bokeh_plot)
+                if len(plot_data) == 0:
+                    plot_data = [lambda d: ('flags', input_data[0][1])]
+                    plot_labels = ['All OK (Velocity Check shown)']
+                data_plot.add_graph(plot_data, colors8[0:len(plot_data)], plot_labels)
+                plot_flight_modes_background(data_plot, flight_mode_changes)
+                if data_plot.finalize() is not None:
+                    plots.append(data_plot.bokeh_plot)
+            else:
+                # Newer PX4: use estimator_status_flags with individual reject fields
+                esf = _safe_get_dataset(ulog, 'estimator_status_flags')
+                if esf is not None:
+                    esf_data = esf.data
+                    data_plot = DataPlot(data, plot_config, 'estimator_status_flags',
+                                         y_start=0,
+                                         title='Innovation Rejection Flags (Detailed)',
+                                         plot_height='normal', x_range=x_range)
+                    plot_data = []
+                    plot_labels = []
+                    reject_fields = [
+                        ('reject_hor_vel', 'Horiz Velocity'),
+                        ('reject_ver_vel', 'Vert Velocity'),
+                        ('reject_hor_pos', 'Horiz Position'),
+                        ('reject_ver_pos', 'Vert Position'),
+                        ('reject_yaw', 'Yaw'),
+                        ('reject_airspeed', 'Airspeed'),
+                        ('reject_sideslip', 'Sideslip'),
+                        ('reject_hagl', 'Height Above Ground'),
+                        ('reject_optflow_x', 'Optical Flow X'),
+                        ('reject_optflow_y', 'Optical Flow Y'),
+                    ]
+                    for field_name, cur_label in reject_fields:
+                        if field_name in esf_data and np.amax(esf_data[field_name]) > 0.1:
+                            cur_data = esf_data[field_name]
+                            data_label = 'flag_' + str(len(plot_data))
+                            plot_data.append(lambda d, data=cur_data, label=data_label: (label, data))
+                            plot_labels.append(cur_label)
+                            if len(plot_data) >= 8:
+                                break
+
+                    if len(plot_data) == 0:
+                        # Show a flat zero line to indicate all OK
+                        first_field = next((f for f, _ in reject_fields if f in esf_data), None)
+                        if first_field is not None:
+                            plot_data = [lambda d, f=first_field: ('flags', d[f])]
+                            plot_labels = ['All OK (Horiz Velocity shown)']
+                    if plot_data:
+                        data_plot.add_graph(plot_data, colors8[0:len(plot_data)], plot_labels)
+                        plot_flight_modes_background(data_plot, flight_mode_changes)
+                        if data_plot.finalize() is not None:
+                            plots.append(data_plot.bokeh_plot)
+
+                    # Also show fault status flags (mag, acc, etc.)
+                    fault_fields = [
+                        ('fs_bad_mag_x', 'Bad Mag X'),
+                        ('fs_bad_mag_y', 'Bad Mag Y'),
+                        ('fs_bad_mag_z', 'Bad Mag Z'),
+                        ('fs_bad_hdg', 'Bad Heading'),
+                        ('fs_bad_airspeed', 'Bad Airspeed'),
+                        ('fs_bad_acc_bias', 'Bad Accel Bias'),
+                        ('fs_bad_acc_vertical', 'Bad Accel Vertical'),
+                        ('fs_bad_acc_clipping', 'Bad Accel Clipping'),
+                    ]
+                    fault_plot_data = []
+                    fault_plot_labels = []
+                    for field_name, cur_label in fault_fields:
+                        if field_name in esf_data and np.amax(esf_data[field_name]) > 0.1:
+                            cur_data = esf_data[field_name]
+                            data_label = 'fault_' + str(len(fault_plot_data))
+                            fault_plot_data.append(
+                                lambda d, data=cur_data, label=data_label: (label, data))
+                            fault_plot_labels.append(cur_label)
+                            if len(fault_plot_data) >= 8:
+                                break
+                    if fault_plot_data:
+                        data_plot2 = DataPlot(data, plot_config, 'estimator_status_flags',
+                                              y_start=0,
+                                              title='EKF Fault Status Flags',
+                                              plot_height='small', x_range=x_range)
+                        data_plot2.add_graph(fault_plot_data,
+                                             colors8[0:len(fault_plot_data)],
+                                             fault_plot_labels)
+                        plot_flight_modes_background(data_plot2, flight_mode_changes)
+                        if data_plot2.finalize() is not None:
+                            plots.append(data_plot2.bokeh_plot)
 
             # Health and timeout flags
             data_plot = DataPlot(data, plot_config, 'estimator_status',
@@ -629,12 +708,16 @@ estimation problems that may need parameter tuning.
 
     # --- Vibration Metrics ---
     try:
+        vibe_header_added = False
+
+        # Try legacy vibe[0-2] in estimator_status first
         vibe = _safe_get_dataset(ulog, 'estimator_status')
         if vibe is not None and 'vibe[0]' in vibe.data:
             div = Div(text="<h4>Vibration Metrics (from EKF)</h4>"
                       "<p>High vibration degrades IMU measurements and EKF performance. "
                       "Values above 30 m/s² indicate serious vibration issues.</p>")
             plots.append(column(div))
+            vibe_header_added = True
 
             data_plot = DataPlot(data, plot_config, 'estimator_status',
                                  y_axis_label='[m/s²]',
@@ -655,11 +738,46 @@ estimation problems that may need parameter tuning.
                 if data_plot.finalize() is not None:
                     plots.append(data_plot.bokeh_plot)
 
-        # Also check vehicle_imu_status for clipping
+        # Check vehicle_imu_status for vibration metrics and clipping
         imu_status = _safe_get_dataset(ulog, 'vehicle_imu_status')
         if imu_status is not None:
             imu_data = imu_status.data
 
+            if not vibe_header_added:
+                div = Div(text="<h4>Vibration Metrics (from IMU)</h4>"
+                          "<p>High vibration degrades IMU measurements and EKF performance. "
+                          "Accel vibration metric above 1.0 or clipping events indicate "
+                          "serious vibration issues.</p>")
+                plots.append(column(div))
+                vibe_header_added = True
+
+            # Vibration metrics (newer PX4 firmware)
+            vmetric_fields = []
+            vmetric_labels = []
+            vmetric_colors = []
+            if 'accel_vibration_metric' in imu_data:
+                vmetric_fields.append('accel_vibration_metric')
+                vmetric_labels.append('Accel Vibration')
+                vmetric_colors.append(colors3[0])
+            if 'gyro_vibration_metric' in imu_data:
+                vmetric_fields.append('gyro_vibration_metric')
+                vmetric_labels.append('Gyro Vibration')
+                vmetric_colors.append(colors3[1])
+            if 'delta_angle_coning_metric' in imu_data:
+                vmetric_fields.append('delta_angle_coning_metric')
+                vmetric_labels.append('Coning Metric')
+                vmetric_colors.append(colors3[2])
+            if vmetric_fields:
+                data_plot = DataPlot(data, plot_config, 'vehicle_imu_status',
+                                     y_axis_label='Metric',
+                                     title='IMU Vibration Metrics',
+                                     plot_height='small', x_range=x_range)
+                data_plot.add_graph(vmetric_fields, vmetric_colors, vmetric_labels)
+                plot_flight_modes_background(data_plot, flight_mode_changes)
+                if data_plot.finalize() is not None:
+                    plots.append(data_plot.bokeh_plot)
+
+            # Clipping events
             clip_fields = []
             clip_labels = []
             clip_colors = []
@@ -699,9 +817,9 @@ estimation problems that may need parameter tuning.
                 ('tas_test_ratio', 'Airspeed'),
                 ('hagl_test_ratio', 'Height Above Ground'),
             ]:
-                if ratio_name in es_data:
-                    max_ratio = np.max(es_data[ratio_name])
-                    mean_ratio = np.mean(es_data[ratio_name])
+                if ratio_name in es_data and np.any(np.isfinite(es_data[ratio_name])):
+                    max_ratio = np.nanmax(es_data[ratio_name])
+                    mean_ratio = np.nanmean(es_data[ratio_name])
                     color = '#d55e00' if max_ratio > 1.0 else (
                         '#e69f00' if max_ratio > 0.5 else '#009e73')
                     status = 'FAIL' if max_ratio > 1.0 else (
@@ -725,6 +843,9 @@ estimation problems that may need parameter tuning.
     except (KeyError, IndexError) as error:
         print('Error in EKF summary: ' + str(error))
 
+
+    # Defensive: filter out any None values that might have crept in
+    plots = [p for p in plots if p is not None]
 
     if len(plots) == 0:
         div = Div(text="<p>No EKF data found in this log. "
