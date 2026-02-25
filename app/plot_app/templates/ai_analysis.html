@@ -236,6 +236,9 @@ xai_model = grok-4-fast</pre>
                     <button id="rerun-analysis-btn" class="btn btn-outline-secondary d-none" onclick="runAnalysis()">
                         <i class="fa-solid fa-rotate"></i> Re-run Analysis
                     </button>
+                    <button id="export-analysis-btn" class="btn btn-outline-success d-none" onclick="exportAnalysis()">
+                        <i class="fa-solid fa-download"></i> Export
+                    </button>
                 </div>
 
                 <div id="analysis-output">
@@ -269,6 +272,56 @@ xai_model = grok-4-fast</pre>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     const LOG_ID = "{{ log_id }}";
+    let lastAnalysisData = null;
+
+    function exportAnalysis() {
+        if (!lastAnalysisData) return;
+
+        let md = '';
+        // Header
+        md += '# AI Flight Analysis\n';
+        md += `**Log ID:** ${LOG_ID}\n`;
+        md += `**Date:** ${new Date().toISOString().slice(0, 10)}\n`;
+        if (lastAnalysisData.model) {
+            md += `**Model:** ${lastAnalysisData.model}\n`;
+        }
+
+        // Data summary
+        if (lastAnalysisData.data_summary) {
+            const ds = lastAnalysisData.data_summary;
+            md += '\n## Data Summary\n';
+            md += `| Field | Value |\n|-------|-------|\n`;
+            md += `| Duration | ${Math.round(ds.duration_s)}s |\n`;
+            md += `| Vehicle Type | ${ds.mav_type} |\n`;
+            md += `| Parameters | ${ds.num_parameters} |\n`;
+            md += `| EKF Data | ${ds.has_ekf_data ? 'Yes' : 'No'} |\n`;
+            md += `| PID Data | ${ds.has_pid_data ? 'Yes' : 'No'} |\n`;
+            md += `| Log Messages | ${ds.num_messages} |\n`;
+        }
+
+        // Main analysis
+        if (lastAnalysisData.analysis) {
+            md += '\n---\n\n';
+            md += lastAnalysisData.analysis;
+        }
+
+        // Reasoning
+        if (lastAnalysisData.reasoning) {
+            md += '\n\n---\n\n## AI Reasoning\n\n';
+            md += lastAnalysisData.reasoning;
+        }
+
+        // Download
+        const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ai_analysis_${LOG_ID.substring(0, 8)}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
 
     function runAnalysis() {
         const output = document.getElementById('analysis-output');
@@ -298,7 +351,9 @@ xai_model = grok-4-fast</pre>
         .then(response => response.json().then(data => ({status: response.status, body: data})))
         .then(({status, body}) => {
             if (status === 200) {
+                lastAnalysisData = body;
                 renderAnalysis(body);
+                document.getElementById('export-analysis-btn').classList.remove('d-none');
             } else {
                 output.innerHTML = `
                     <div class="error-message">
@@ -307,6 +362,7 @@ xai_model = grok-4-fast</pre>
                         <p>${body.error || 'Unknown error occurred'}</p>
                     </div>
                 `;
+                document.getElementById('export-analysis-btn').classList.add('d-none');
             }
             rerunBtn.classList.remove('d-none');
         })

@@ -74,8 +74,16 @@ estimation problems that may need parameter tuning.
         if estimator_status is not None:
             es_data = estimator_status.data
 
+            # Helper: only show a test ratio plot if the field has valid
+            # (finite, non-NaN) data. Many test ratio fields exist in the
+            # message but are all-NaN when the corresponding estimator is
+            # not active (e.g. HAGL without a rangefinder, TAS without
+            # an airspeed sensor).
+            def _has_valid_ratio(field):
+                return field in es_data and np.any(np.isfinite(es_data[field]))
+
             # Velocity innovations test ratio
-            if 'vel_test_ratio' in es_data:
+            if _has_valid_ratio('vel_test_ratio'):
                 data_plot = DataPlot(data, plot_config, 'estimator_status',
                                      y_axis_label='Ratio',
                                      title='Velocity Innovation Test Ratio',
@@ -87,7 +95,7 @@ estimation problems that may need parameter tuning.
                     plots.append(data_plot.bokeh_plot)
 
             # Position innovation test ratio
-            if 'pos_test_ratio' in es_data:
+            if _has_valid_ratio('pos_test_ratio'):
                 data_plot = DataPlot(data, plot_config, 'estimator_status',
                                      y_axis_label='Ratio',
                                      title='Horizontal Position Innovation Test Ratio',
@@ -99,7 +107,7 @@ estimation problems that may need parameter tuning.
                     plots.append(data_plot.bokeh_plot)
 
             # Height innovation test ratio
-            if 'hgt_test_ratio' in es_data:
+            if _has_valid_ratio('hgt_test_ratio'):
                 data_plot = DataPlot(data, plot_config, 'estimator_status',
                                      y_axis_label='Ratio',
                                      title='Vertical Position Innovation Test Ratio',
@@ -111,7 +119,7 @@ estimation problems that may need parameter tuning.
                     plots.append(data_plot.bokeh_plot)
 
             # Magnetometer innovation test ratio
-            if 'mag_test_ratio' in es_data:
+            if _has_valid_ratio('mag_test_ratio'):
                 data_plot = DataPlot(data, plot_config, 'estimator_status',
                                      y_axis_label='Ratio',
                                      title='Magnetometer Innovation Test Ratio',
@@ -122,8 +130,8 @@ estimation problems that may need parameter tuning.
                 if data_plot.finalize() is not None:
                     plots.append(data_plot.bokeh_plot)
 
-            # Airspeed test ratio (if available and not all NaN)
-            if 'tas_test_ratio' in es_data and np.any(np.isfinite(es_data['tas_test_ratio'])):
+            # Airspeed test ratio
+            if _has_valid_ratio('tas_test_ratio'):
                 data_plot = DataPlot(data, plot_config, 'estimator_status',
                                      y_axis_label='Ratio',
                                      title='Airspeed Innovation Test Ratio',
@@ -135,7 +143,7 @@ estimation problems that may need parameter tuning.
                     plots.append(data_plot.bokeh_plot)
 
             # Hagl test ratio (height above ground)
-            if 'hagl_test_ratio' in es_data:
+            if _has_valid_ratio('hagl_test_ratio'):
                 data_plot = DataPlot(data, plot_config, 'estimator_status',
                                      y_axis_label='Ratio',
                                      title='Height Above Ground Innovation Test Ratio',
