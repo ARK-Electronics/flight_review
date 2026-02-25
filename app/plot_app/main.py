@@ -18,6 +18,7 @@ from colors import HTML_color_to_RGB
 from db_entry import *
 from configured_plots import generate_plots
 from pid_analysis_plots import get_pid_analysis_plots
+from ekf_analysis_plots import get_ekf_analysis_plots
 from statistics_plots import StatisticsPlots
 
 from logs.px4_ulog_compat import PX4ULogCompat
@@ -261,6 +262,18 @@ else:
                 traceback.print_exc()
                 title, error_message, plots = show_exception_page()
 
+        elif plots_page == 'ekf_analysis':
+            try:
+                link_to_main_plots = '?log='+log_id
+                plots = get_ekf_analysis_plots(ulog, px4_ulog, db_data,
+                                               link_to_main_plots)
+
+                title = 'Flight Review - EKF Analysis - '+px4_ulog.get_mav_type()
+
+            except Exception as error:
+                traceback.print_exc()
+                title, error_message, plots = show_exception_page()
+
         else:
             # template variables
             curdoc().template_variables['cur_err_ids'] = db_data.error_labels
@@ -288,10 +301,14 @@ else:
 
             link_to_3d_page = '3d?log='+log_id
             link_to_pid_analysis_page = '?plots=pid_analysis&log='+log_id
+            link_to_ekf_analysis_page = '?plots=ekf_analysis&log='+log_id
+            link_to_ai_analysis_page = 'ai_analysis?log='+log_id
 
             try:
                 plots = generate_plots(ulog, px4_ulog, db_data, vehicle_data,
-                                       link_to_3d_page, link_to_pid_analysis_page, delete_url)
+                                       link_to_3d_page, link_to_pid_analysis_page,
+                                       link_to_ekf_analysis_page,
+                                       link_to_ai_analysis_page, delete_url)
 
                 title = 'Flight Review - '+px4_ulog.get_mav_type()
 

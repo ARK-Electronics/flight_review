@@ -26,7 +26,8 @@ from vtol_tailsitter import *
 
 
 def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
-                   link_to_pid_analysis_page, delete_url=None):
+                   link_to_pid_analysis_page, link_to_ekf_analysis_page=None,
+                   link_to_ai_analysis_page=None, delete_url=None):
     """ create a list of bokeh plots (and widgets) to show """
 
     plots = []
@@ -128,6 +129,10 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
 
     # Heading
     additional_links = [("Open PID Analysis", link_to_pid_analysis_page)]
+    if link_to_ekf_analysis_page:
+        additional_links.append(("Open EKF Analysis", link_to_ekf_analysis_page))
+    if link_to_ai_analysis_page:
+        additional_links.append(("AI Analysis", link_to_ai_analysis_page))
     if delete_url:
         additional_links.append(("Delete Log", delete_url))
 

@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>AI Flight Analysis - Flight Review</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href='https://fonts.googleapis.com/css?family=Play:400' rel='stylesheet' type='text/css'>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/fontawesome.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/solid.min.css" rel="stylesheet">
+    <link href="plot_app/static/css/main.css" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="plot_app/static/images/favicon.ico">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.8/dist/yeti/bootstrap.min.css" crossorigin="anonymous">
+    <!-- Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Syntax highlighting for code blocks -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        .ai-analysis-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .analysis-header h3 {
+            margin: 0;
+        }
+        .btn-group-nav a {
+            margin-left: 8px;
+        }
+        #analysis-output {
+            min-height: 200px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 24px;
+            background: #fff;
+            margin-top: 16px;
+        }
+        #analysis-output h1, #analysis-output h2, #analysis-output h3,
+        #analysis-output h4, #analysis-output h5 {
+            margin-top: 1.2em;
+            margin-bottom: 0.5em;
+            color: #2c3e50;
+        }
+        #analysis-output h2 {
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 6px;
+        }
+        #analysis-output ul, #analysis-output ol {
+            margin-bottom: 1em;
+        }
+        #analysis-output li {
+            margin-bottom: 0.3em;
+        }
+        #analysis-output code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        #analysis-output pre {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 12px;
+            overflow-x: auto;
+        }
+        #analysis-output pre code {
+            background: transparent;
+            padding: 0;
+        }
+        #analysis-output table {
+            width: 100%;
+            margin: 1em 0;
+            border-collapse: collapse;
+        }
+        #analysis-output th, #analysis-output td {
+            border: 1px solid #dee2e6;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        #analysis-output th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        #analysis-output strong {
+            color: #2c3e50;
+        }
+        .loading-spinner {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+        .loading-spinner .spinner-border {
+            width: 3rem;
+            height: 3rem;
+            margin-bottom: 16px;
+        }
+        .loading-spinner .status-text {
+            font-size: 1.1em;
+            margin-bottom: 8px;
+        }
+        .loading-spinner .substatus-text {
+            font-size: 0.9em;
+            color: #adb5bd;
+        }
+        .error-message {
+            color: #dc3545;
+            padding: 20px;
+            text-align: center;
+        }
+        .data-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 12px;
+            margin-bottom: 8px;
+        }
+        .data-summary .badge-info {
+            background: #e8f4fd;
+            color: #1a73e8;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .reasoning-toggle {
+            margin-top: 16px;
+        }
+        .reasoning-content {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 8px;
+            font-size: 0.9em;
+            color: #6c757d;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .no-api-key {
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .no-api-key i {
+            font-size: 3em;
+            color: #ffc107;
+            margin-bottom: 16px;
+        }
+        .model-badge {
+            background: #1a1a2e;
+            color: #e94560;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body>
+
+<nav id="header" class="navbar navbar-expand-lg navbar-dark bg-blue overflow-visible z-3">
+    <div class="container-fluid">
+        <div class="navbar-brand">
+            <h1>
+                <a href="/">
+                    <img src="plot_app/static/images/flight-review-logo.svg" alt="PX4 Flight Review">
+                </a>
+            </h1>
+        </div>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-collapse">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbar-collapse">
+            <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link" href="upload">Upload</a></li>
+                <li class="nav-item"><a class="nav-link" href="browse">Browse</a></li>
+                {% if current_user %}
+                    <li class="nav-item"><a class="nav-link" href="/logout">Logout ({{ current_user }})</a></li>
+                {% else %}
+                    <li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container content">
+    <div class="row">
+        <div class="col-lg-10 mx-auto">
+            <div class="ai-analysis-container">
+
+                <div class="analysis-header">
+                    <div>
+                        <h3>
+                            <i class="fa-solid fa-brain" style="color: #e94560;"></i>
+                            AI Flight Analysis
+                        </h3>
+                    </div>
+                    <div class="btn-group-nav">
+                        <a class="btn btn-outline-primary btn-sm" href="plot_app?log={{ log_id }}">Main Plots</a>
+                        <a class="btn btn-outline-primary btn-sm" href="plot_app?plots=pid_analysis&log={{ log_id }}">PID Analysis</a>
+                        <a class="btn btn-outline-primary btn-sm" href="plot_app?plots=ekf_analysis&log={{ log_id }}">EKF Analysis</a>
+                    </div>
+                </div>
+
+                {% if not has_api_key %}
+                <div id="analysis-output">
+                    <div class="no-api-key">
+                        <i class="fa-solid fa-key"></i>
+                        <h4>API Key Required</h4>
+                        <p>To use AI-powered flight analysis, configure your xAI (Grok) API key.</p>
+                        <p>Set <code>xai_api_key</code> in <code>config_user.ini</code> under <code>[ai_analysis]</code>,
+                           or set the <code>XAI_API_KEY</code> environment variable.</p>
+                        <pre style="text-align:left; max-width:400px; margin:16px auto;">[ai_analysis]
+xai_api_key = xai-your-key-here
+xai_model = grok-4-fast</pre>
+                        <p class="text-muted mt-2">Get an API key at <a href="https://console.x.ai/" target="_blank">console.x.ai</a></p>
+                    </div>
+                </div>
+                {% else %}
+                <div>
+                    <button id="run-analysis-btn" class="btn btn-primary" onclick="runAnalysis()">
+                        <i class="fa-solid fa-play"></i> Run AI Analysis
+                    </button>
+                    <button id="rerun-analysis-btn" class="btn btn-outline-secondary d-none" onclick="runAnalysis()">
+                        <i class="fa-solid fa-rotate"></i> Re-run Analysis
+                    </button>
+                </div>
+
+                <div id="analysis-output">
+                    <div style="text-align:center; padding:40px; color:#adb5bd;">
+                        <i class="fa-solid fa-robot" style="font-size:3em; margin-bottom:16px;"></i>
+                        <p>Click <b>Run AI Analysis</b> to analyze this flight log using Grok AI.</p>
+                        <p class="text-muted" style="font-size:0.9em;">
+                            The analysis extracts PID controller tracking, EKF innovations & biases,
+                            sensor data, and vehicle status from the log, then sends it to xAI's Grok
+                            model for expert-level failure detection and tuning recommendations.
+                        </p>
+                    </div>
+                </div>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<footer id="footer">
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="copyright-text text-center">
+                <p>&copy; 2026 PX4 Team. AI Analysis powered by <a href="https://x.ai" target="_blank">xAI Grok</a>.</p>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const LOG_ID = "{{ log_id }}";
+
+    function runAnalysis() {
+        const output = document.getElementById('analysis-output');
+        const runBtn = document.getElementById('run-analysis-btn');
+        const rerunBtn = document.getElementById('rerun-analysis-btn');
+
+        // Show loading state
+        runBtn.classList.add('d-none');
+        rerunBtn.classList.add('d-none');
+
+        output.innerHTML = `
+            <div class="loading-spinner">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div class="status-text">Analyzing flight data...</div>
+                <div class="substatus-text">Extracting ULog data and sending to Grok AI. This may take 30-60 seconds.</div>
+            </div>
+        `;
+
+        fetch('/ai_analysis/api?log=' + encodeURIComponent(LOG_ID), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+        })
+        .then(response => response.json().then(data => ({status: response.status, body: data})))
+        .then(({status, body}) => {
+            if (status === 200) {
+                renderAnalysis(body);
+            } else {
+                output.innerHTML = `
+                    <div class="error-message">
+                        <i class="fa-solid fa-circle-exclamation" style="font-size:2em; margin-bottom:12px;"></i>
+                        <h5>Analysis Failed</h5>
+                        <p>${body.error || 'Unknown error occurred'}</p>
+                    </div>
+                `;
+            }
+            rerunBtn.classList.remove('d-none');
+        })
+        .catch(error => {
+            output.innerHTML = `
+                <div class="error-message">
+                    <i class="fa-solid fa-circle-exclamation" style="font-size:2em; margin-bottom:12px;"></i>
+                    <h5>Connection Error</h5>
+                    <p>${error.message}</p>
+                </div>
+            `;
+            rerunBtn.classList.remove('d-none');
+        });
+    }
+
+    function renderAnalysis(data) {
+        const output = document.getElementById('analysis-output');
+        let html = '';
+
+        // Data summary badges
+        if (data.data_summary) {
+            const ds = data.data_summary;
+            html += '<div class="data-summary">';
+            html += `<span class="badge-info">Duration: ${Math.round(ds.duration_s)}s</span>`;
+            html += `<span class="badge-info">Type: ${ds.mav_type}</span>`;
+            html += `<span class="badge-info">Parameters: ${ds.num_parameters}</span>`;
+            html += `<span class="badge-info">EKF Data: ${ds.has_ekf_data ? 'Yes' : 'No'}</span>`;
+            html += `<span class="badge-info">PID Data: ${ds.has_pid_data ? 'Yes' : 'No'}</span>`;
+            html += `<span class="badge-info">Messages: ${ds.num_messages}</span>`;
+            if (data.model) {
+                html += `<span class="model-badge">${data.model}</span>`;
+            }
+            html += '</div>';
+        }
+
+        // Main analysis content (markdown -> html)
+        if (data.analysis) {
+            html += '<div class="analysis-content">';
+            html += marked.parse(data.analysis);
+            html += '</div>';
+        }
+
+        // Reasoning (collapsible)
+        if (data.reasoning) {
+            html += `
+                <div class="reasoning-toggle">
+                    <button class="btn btn-sm btn-outline-secondary" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#reasoning-content">
+                        <i class="fa-solid fa-lightbulb"></i> Show AI Reasoning
+                    </button>
+                    <div class="collapse" id="reasoning-content">
+                        <div class="reasoning-content">
+                            ${marked.parse(data.reasoning)}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        output.innerHTML = html;
+
+        // Apply syntax highlighting to code blocks
+        output.querySelectorAll('pre code').forEach((block) => {
+            hljs.highlightElement(block);
+        });
+    }
+</script>
+
+</body>
+</html>

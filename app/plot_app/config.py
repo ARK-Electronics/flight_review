@@ -72,6 +72,14 @@ __RELEASES_FILENAME = os.path.join(__CACHE_FILE_PATH, 'releases.json')
 __PRINT_TIMING = int(_conf.get('debug', 'print_timing'))
 __VERBOSE_OUTPUT = int(_conf.get('debug', 'verbose_output'))
 
+# AI Analysis config
+try:
+    __XAI_API_KEY = os.environ.get('XAI_API_KEY', _conf.get('ai_analysis', 'xai_api_key'))
+    __XAI_MODEL = os.environ.get('XAI_MODEL', _conf.get('ai_analysis', 'xai_model'))
+except (configparser.NoSectionError, configparser.NoOptionError):
+    __XAI_API_KEY = os.environ.get('XAI_API_KEY', '')
+    __XAI_MODEL = os.environ.get('XAI_MODEL', 'grok-4-fast')
+
 __ENCRYPTION_KEY = _conf.get('general', 'ulge_private_key')
 if __ENCRYPTION_KEY == '':
     __ENCRYPTION_KEY = None
@@ -181,6 +189,14 @@ def debug_print_timing():
 def debug_verbose_output():
     """ print verbose output? """
     return __VERBOSE_OUTPUT == 1
+
+def get_xai_api_key():
+    """ get xAI (Grok) API key """
+    return __XAI_API_KEY
+
+def get_xai_model():
+    """ get xAI model name """
+    return __XAI_MODEL
 
 # Get the ULGE private key path
 def get_ulge_private_key_path():

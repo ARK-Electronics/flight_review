@@ -29,6 +29,7 @@ from tornado_handlers.radio_controller import RadioControllerHandler
 from tornado_handlers.error_labels import UpdateErrorLabelHandler
 from tornado_handlers.auth import LoginHandler, LogoutHandler, RegisterHandler, ApproveUserHandler, ForgotPasswordHandler, ResetPasswordHandler
 from tornado_handlers.admin import AdminUsersHandler, AdminUsersAPIHandler
+from tornado_handlers.ai_analysis import AIAnalysisHandler, AIAnalysisAPIHandler
 
 from helper import set_log_id_is_filename, print_cache_info #pylint: disable=C0411
 from config import debug_print_timing, get_overview_img_filepath, get_domain_name #pylint: disable=C0411
@@ -58,6 +59,8 @@ parser.add_argument('--3d', dest='threed', action='store_true',
                     help='Open 3D page (only if --file is provided)')
 parser.add_argument('--pid-analysis', dest='pid_analysis', action='store_true',
                     help='Open PID analysis page (only if --file is provided)')
+parser.add_argument('--ekf-analysis', dest='ekf_analysis', action='store_true',
+                    help='Open EKF analysis page (only if --file is provided)')
 parser.add_argument('--num-procs', dest='numprocs', type=int, action='store',
                     help="""Number of worker processes. Default to 1.
                     0 will autodetect number of cores""",
@@ -119,6 +122,7 @@ server_kwargs['http_server_kwargs'] = {
 show_ulog_file = False
 show_3d_page = False
 show_pid_analysis_page = False
+show_ekf_analysis_page = False
 ulog_file = ''
 if args.file is not None:
     ulog_file = os.path.abspath(args.file)
@@ -126,6 +130,7 @@ if args.file is not None:
     args.show = True
     show_3d_page = args.threed
     show_pid_analysis_page = args.pid_analysis
+    show_ekf_analysis_page = args.ekf_analysis
 
 set_log_id_is_filename(show_ulog_file)
 
@@ -150,6 +155,8 @@ extra_patterns = [
     (r'/reset_password', ResetPasswordHandler),
     (r'/admin', AdminUsersHandler),
     (r'/admin/api', AdminUsersAPIHandler),
+    (r'/ai_analysis', AIAnalysisHandler),
+    (r'/ai_analysis/api', AIAnalysisAPIHandler),
     (r"/stats", RedirectHandler, {"url": "/plot_app?stats=1"}),
     (r'/overview_img/(.*)', StaticFileHandler, {'path': get_overview_img_filepath()}),
 ]
@@ -195,6 +202,8 @@ if args.show:
                 server.show('/3d?log='+ulog_file)
             elif show_pid_analysis_page:
                 server.show('/plot_app?plots=pid_analysis&log='+ulog_file)
+            elif show_ekf_analysis_page:
+                server.show('/plot_app?plots=ekf_analysis&log='+ulog_file)
             else:
                 server.show('/plot_app?log='+ulog_file)
         else:
