@@ -16,7 +16,7 @@ from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
-from config import get_xai_api_key, get_xai_model
+from config import get_xai_api_key, get_xai_model, get_cache_filepath
 from helper import validate_log_id, get_log_filename, load_log_file, \
     get_flight_mode_changes, flight_modes_table
 
@@ -26,6 +26,38 @@ from pyulog.px4 import PX4ULog
 from .common import get_jinja_env, CustomHTTPError, TornadoRequestHandlerBase
 
 AI_ANALYSIS_TEMPLATE = 'ai_analysis.html'
+
+# AI analysis cache directory
+_AI_CACHE_DIR = os.path.join(get_cache_filepath(), 'ai_analysis')
+os.makedirs(_AI_CACHE_DIR, exist_ok=True)
+
+
+def _get_cache_path(log_id):
+    """Get the cache file path for a given log ID."""
+    return os.path.join(_AI_CACHE_DIR, f'{log_id}.json')
+
+
+def _load_cached_analysis(log_id):
+    """Load cached analysis result for a log ID. Returns dict or None."""
+    cache_path = _get_cache_path(log_id)
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return None
+    return None
+
+
+def _save_cached_analysis(log_id, data):
+    """Save analysis result to cache."""
+    cache_path = _get_cache_path(log_id)
+    try:
+        with open(cache_path, 'w') as f:
+            json.dump(data, f)
+    except OSError:
+        pass
+
 
 # System prompt grounded in UAV-SEAD paper findings and PX4 domain knowledge
 SYSTEM_PROMPT = """You are an expert PX4 flight data analyst specializing in UAV state estimation
@@ -523,6 +555,24 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
     """API handler that performs the actual AI analysis."""
 
     @tornado.web.authenticated
+    def get(self, *args, **kwargs):
+        """GET request - return cached analysis if available."""
+        log_id = self.get_argument('log', '')
+        if not validate_log_id(log_id):
+            self.set_status(400)
+            self.write({'error': 'Invalid log ID'})
+            return
+
+        cached = _load_cached_analysis(log_id)
+        if cached:
+            cached['cached'] = True
+            self.set_header('Content-Type', 'application/json')
+            self.write(json.dumps(cached))
+        else:
+            self.set_header('Content-Type', 'application/json')
+            self.write(json.dumps({'cached': False}))
+
+    @tornado.web.authenticated
     @tornado.gen.coroutine
     def post(self, *args, **kwargs):
         """POST request - run AI analysis on the log."""
@@ -605,8 +655,7 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
                 if 'reasoning_content' in result['choices'][0]['message']:
                     reasoning = result['choices'][0]['message']['reasoning_content']
 
-                self.set_header('Content-Type', 'application/json')
-                self.write(json.dumps({
+                response_data = {
                     'analysis': ai_response,
                     'reasoning': reasoning,
                     'model': model,
@@ -618,7 +667,13 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
                         'has_pid_data': bool(pid_data),
                         'num_messages': len(logged_messages),
                     }
-                }))
+                }
+
+                # Cache the result
+                _save_cached_analysis(log_id, response_data)
+
+                self.set_header('Content-Type', 'application/json')
+                self.write(json.dumps(response_data))
             else:
                 error_msg = f'xAI API error (HTTP {response.code})'
                 try:
