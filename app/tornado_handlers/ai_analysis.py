@@ -70,6 +70,10 @@ which categorizes anomalies into:
 - **EKF estimation divergence**: Innovation test ratio failures, covariance growth, filter resets
 - **Control performance issues**: PID oscillation, overshoot, inadequate tracking, actuator saturation
 - **Vehicle health problems**: Motor/ESC failures, battery degradation, structural issues
+- **Motor failure signatures**: A single motor output going to 100% (saturation) while others
+  remain lower is a strong indicator of motor or propeller failure. The flight controller
+  compensates for the lost thrust by maxing out the failed/opposite motor. Look for sustained
+  saturation (>95% for >1s), large motor output asymmetry, and correlate with attitude divergence.
 
 When analyzing flight data, you should:
 1. **Identify failures and anomalies** - Look for sensor dropouts, EKF innovation spikes,
@@ -375,6 +379,129 @@ def _extract_vehicle_status(ulog, max_points=200):
     return status_data
 
 
+def _detect_motor_failure(ulog, max_points=300):
+    """Detect potential motor/propeller failure from actuator output patterns.
+
+    A motor failure typically manifests as:
+    - One motor output saturating at ~100% for a sustained period
+    - Large asymmetry between motor outputs
+    - The flight controller compensating for lost thrust
+
+    Returns a dict with detection results, or empty dict if no actuator data.
+    """
+    motor_failure = {}
+
+    for topic_name in ['actuator_motors', 'actuator_controls_0']:
+        try:
+            act = ulog.get_dataset(topic_name)
+        except (KeyError, IndexError):
+            continue
+
+        act_data = act.data
+        timestamps_s = act_data['timestamp'] / 1e6
+        dt = np.diff(timestamps_s)
+        mean_dt = float(np.mean(dt)) if len(dt) > 0 else 0.02  # fallback sample period
+
+        # Collect motor channels
+        motor_keys = []
+        for key in sorted(act_data.keys()):
+            if key == 'timestamp' or key.startswith('_'):
+                continue
+            motor_keys.append(key)
+
+        if not motor_keys:
+            continue
+
+        n_motors = len(motor_keys)
+        motor_arrays = {k: act_data[k] for k in motor_keys}
+
+        # Only analyze samples where at least one motor is active (> 0.05)
+        any_active = np.zeros(len(timestamps_s), dtype=bool)
+        for k in motor_keys:
+            any_active |= (motor_arrays[k] > 0.05)
+
+        if np.sum(any_active) < 10:
+            continue  # not enough active samples
+
+        SATURATION_THRESHOLD = 0.95  # consider motor saturated above this
+        SUSTAINED_SECONDS = 0.5  # minimum duration to flag as sustained
+
+        per_motor = {}
+        for k in motor_keys:
+            values = motor_arrays[k]
+            active_values = values[any_active]
+
+            saturated_mask = values >= SATURATION_THRESHOLD
+            # Count sustained saturation: consecutive saturated samples
+            sat_samples = int(np.sum(saturated_mask & any_active))
+            sat_duration_s = round(sat_samples * mean_dt, 2)
+
+            # Find longest continuous saturation run
+            longest_run = 0
+            current_run = 0
+            for i in range(len(values)):
+                if saturated_mask[i] and any_active[i]:
+                    current_run += 1
+                    longest_run = max(longest_run, current_run)
+                else:
+                    current_run = 0
+            longest_run_s = round(longest_run * mean_dt, 2)
+
+            per_motor[k] = {
+                'mean': round(float(np.mean(active_values)), 4),
+                'max': round(float(np.max(active_values)), 4),
+                'std': round(float(np.std(active_values)), 4),
+                'saturation_total_s': sat_duration_s,
+                'saturation_longest_run_s': longest_run_s,
+                'saturation_pct': round(
+                    100.0 * sat_samples / max(np.sum(any_active), 1), 1),
+            }
+
+        # Detect asymmetry: check if one motor is significantly higher than others
+        motor_means = np.array([per_motor[k]['mean'] for k in motor_keys])
+        motor_sat_pcts = np.array([per_motor[k]['saturation_pct'] for k in motor_keys])
+        motor_longest_runs = np.array([per_motor[k]['saturation_longest_run_s']
+                                        for k in motor_keys])
+
+        max_mean_idx = int(np.argmax(motor_means))
+        others_mean = np.mean(np.delete(motor_means, max_mean_idx))
+        asymmetry = round(float(motor_means[max_mean_idx] - others_mean), 4)
+
+        # Flag potential failure
+        failure_detected = False
+        failure_reasons = []
+
+        # Check for sustained saturation on any motor
+        for i, k in enumerate(motor_keys):
+            if motor_longest_runs[i] >= SUSTAINED_SECONDS:
+                failure_detected = True
+                failure_reasons.append(
+                    f"{k} saturated at 100% for {motor_longest_runs[i]}s continuously"
+                )
+
+        # Check for large output asymmetry (one motor much higher)
+        if asymmetry > 0.3 and motor_means[max_mean_idx] > 0.8:
+            failure_detected = True
+            failure_reasons.append(
+                f"Large motor asymmetry: {motor_keys[max_mean_idx]} mean="
+                f"{motor_means[max_mean_idx]:.3f} vs others mean={others_mean:.3f} "
+                f"(diff={asymmetry:.3f})"
+            )
+
+        motor_failure = {
+            'topic': topic_name,
+            'n_motors': n_motors,
+            'per_motor_stats': per_motor,
+            'max_asymmetry': asymmetry,
+            'highest_motor': motor_keys[max_mean_idx],
+            'failure_detected': failure_detected,
+            'failure_reasons': failure_reasons,
+        }
+        break  # use first available topic
+
+    return motor_failure
+
+
 def _extract_parameters(ulog):
     """Extract key PID and EKF parameters from the log."""
     params = {}
@@ -435,7 +562,7 @@ def _extract_logged_messages(ulog, max_messages=50):
 
 
 def _build_analysis_prompt(flight_summary, pid_data, ekf_data, vehicle_status,
-                           parameters, logged_messages):
+                           parameters, logged_messages, motor_failure=None):
     """Build the user prompt with extracted flight data."""
 
     prompt = "# Flight Log Analysis Request\n\n"
@@ -513,6 +640,18 @@ def _build_analysis_prompt(flight_summary, pid_data, ekf_data, vehicle_status,
                         }
                 if summary:
                     prompt += f"### {key}\n```json\n{json.dumps(summary, indent=2)}\n```\n\n"
+
+    if motor_failure:
+        prompt += "## Motor Failure Analysis\n"
+        if motor_failure.get('failure_detected'):
+            prompt += "**WARNING: Potential motor/propeller failure detected!**\n\n"
+            prompt += "Failure indicators:\n"
+            for reason in motor_failure.get('failure_reasons', []):
+                prompt += f"- {reason}\n"
+            prompt += "\n"
+        prompt += "```json\n"
+        prompt += json.dumps(motor_failure, indent=2, default=str)
+        prompt += "\n```\n\n"
 
     if vehicle_status:
         prompt += "## Vehicle Status\n```json\n"
@@ -605,11 +744,12 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
             vehicle_status = _extract_vehicle_status(ulog)
             parameters = _extract_parameters(ulog)
             logged_messages = _extract_logged_messages(ulog)
+            motor_failure = _detect_motor_failure(ulog)
 
             # Build the prompt
             user_prompt = _build_analysis_prompt(
                 flight_summary, pid_data, ekf_data, vehicle_status,
-                parameters, logged_messages
+                parameters, logged_messages, motor_failure
             )
 
             # Call the xAI Grok API
