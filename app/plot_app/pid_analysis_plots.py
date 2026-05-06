@@ -22,6 +22,24 @@ def get_pid_analysis_plots(ulog, px4_ulog, db_data, link_to_main_plots):
         data_f = interp1d(time_array, data, fill_value='extrapolate')
         return data_f(desired_time)
 
+    # The PID analyzer's window-stacking allocates several arrays that scale
+    # with the input length multiplied by the oversampling factor. Very long
+    # logs at high gyro rates (e.g. 4-8 kHz over many minutes) easily push
+    # peak memory into the multi-GB range and get the worker OOM-killed.
+    # Cap the analysis input to a sample budget that keeps peak memory bounded
+    # while still preserving enough data for the step response analysis.
+    PID_MAX_SAMPLES = 600000
+
+    def _decimate_to_budget(*arrays, max_samples=PID_MAX_SAMPLES):
+        """Uniformly decimate parallel arrays so each has at most max_samples."""
+        if not arrays:
+            return arrays
+        n = len(arrays[0])
+        if n <= max_samples:
+            return arrays
+        step = int(np.ceil(n / max_samples))
+        return tuple(a[::step] for a in arrays)
+
     page_intro = """
 <p>
 This page shows step response plots for the PID controller. The step
@@ -151,7 +169,10 @@ The analysis may take a while...
                 setpoint = _resample(vehicle_rates_setpoint.data['timestamp'],
                                      np.rad2deg(vehicle_rates_setpoint.data[axis]),
                                      gyro_time)
-                trace = Trace(axis, time_seconds, gyro_rate, setpoint, throttle)
+                # Cap memory usage on long, high-rate logs
+                t_s, gyro_rate_d, setpoint_d, throttle_d = _decimate_to_budget(
+                    time_seconds, gyro_rate, setpoint, throttle)
+                trace = Trace(axis, t_s, gyro_rate_d, setpoint_d, throttle_d)
                 plots.append(plot_pid_response(trace, ulog.data_list, plot_config).bokeh_plot)
             except Exception as e:
                 print(type(e), axis, ":", e)
@@ -178,7 +199,11 @@ The analysis may take a while...
                 setpoint = _resample(vehicle_attitude_setpoint.data['timestamp'],
                                      np.rad2deg(vehicle_attitude_setpoint.data[axis+'_d']),
                                      attitude_time)
-                trace = Trace(axis, time_seconds, attitude_estimated, setpoint, throttle)
+                # Cap memory usage on long, high-rate logs
+                t_s, attitude_estimated_d, setpoint_d, throttle_d = \
+                    _decimate_to_budget(time_seconds, attitude_estimated,
+                                        setpoint, throttle)
+                trace = Trace(axis, t_s, attitude_estimated_d, setpoint_d, throttle_d)
                 plots.append(plot_pid_response(trace, ulog.data_list, plot_config,
                                                'Angle').bokeh_plot)
             except Exception as e:
