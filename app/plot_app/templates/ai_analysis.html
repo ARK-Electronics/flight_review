@@ -237,7 +237,14 @@ xai_model = grok-4-fast</pre>
                     </div>
                 </div>
                 {% else %}
-                <div>
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                    <label for="model-select" class="form-label mb-0 me-2">
+                        <i class="fa-solid fa-microchip"></i> Model:
+                    </label>
+                    <select id="model-select" class="form-select form-select-sm"
+                            style="width:auto; min-width:220px;">
+                        <option value="{{ default_model }}">{{ default_model }} (loading…)</option>
+                    </select>
                     <button id="run-analysis-btn" class="btn btn-primary" onclick="runAnalysis()">
                         <i class="fa-solid fa-play"></i> Run AI Analysis
                     </button>
@@ -354,8 +361,11 @@ xai_model = grok-4-fast</pre>
         fetch('/ai_analysis/api?log=' + encodeURIComponent(LOG_ID), {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Type': 'application/json',
             },
+            body: JSON.stringify({
+                model: document.getElementById('model-select').value,
+            }),
         })
         .then(response => response.json().then(data => ({status: response.status, body: data})))
         .then(({status, body}) => {
@@ -444,6 +454,50 @@ xai_model = grok-4-fast</pre>
 
     // Check for cached analysis on page load
     {% if has_api_key %}
+    const DEFAULT_MODEL = {{ default_model | tojson }};
+
+    function loadModels() {
+        const select = document.getElementById('model-select');
+        if (!select) return;
+        fetch('/ai_analysis/models', { method: 'GET' })
+            .then(response => response.json())
+            .then(data => {
+                if (!data || !Array.isArray(data.models) || data.models.length === 0) {
+                    return;
+                }
+                const preferred = DEFAULT_MODEL;
+                // Build options
+                select.innerHTML = '';
+                let foundPreferred = false;
+                data.models.forEach(mid => {
+                    const opt = document.createElement('option');
+                    opt.value = mid;
+                    opt.textContent = mid;
+                    if (mid === preferred) {
+                        opt.selected = true;
+                        foundPreferred = true;
+                    }
+                    select.appendChild(opt);
+                });
+                // If preferred isn't in list, prepend it so user still gets default
+                if (!foundPreferred && preferred) {
+                    const opt = document.createElement('option');
+                    opt.value = preferred;
+                    opt.textContent = preferred + ' (configured default)';
+                    opt.selected = true;
+                    select.insertBefore(opt, select.firstChild);
+                }
+            })
+            .catch(() => {
+                // Keep the single default option already present
+                const select = document.getElementById('model-select');
+                if (select && select.options.length > 0) {
+                    select.options[0].textContent = DEFAULT_MODEL;
+                }
+            });
+    }
+    loadModels();
+
     (function loadCachedAnalysis() {
         fetch('/ai_analysis/api?log=' + encodeURIComponent(LOG_ID), {
             method: 'GET',
@@ -456,6 +510,20 @@ xai_model = grok-4-fast</pre>
                 document.getElementById('run-analysis-btn').classList.add('d-none');
                 document.getElementById('rerun-analysis-btn').classList.remove('d-none');
                 document.getElementById('export-analysis-btn').classList.remove('d-none');
+                // Sync the model selector to the cached model if possible
+                if (data.model) {
+                    const select = document.getElementById('model-select');
+                    if (select) {
+                        const exists = Array.from(select.options).some(o => o.value === data.model);
+                        if (!exists) {
+                            const opt = document.createElement('option');
+                            opt.value = data.model;
+                            opt.textContent = data.model;
+                            select.appendChild(opt);
+                        }
+                        select.value = data.model;
+                    }
+                }
             }
         })
         .catch(() => { /* ignore - user can run manually */ });

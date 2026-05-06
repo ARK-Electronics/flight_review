@@ -78,7 +78,7 @@ try:
     __XAI_MODEL = os.environ.get('XAI_MODEL', _conf.get('ai_analysis', 'xai_model'))
 except (configparser.NoSectionError, configparser.NoOptionError):
     __XAI_API_KEY = os.environ.get('XAI_API_KEY', '')
-    __XAI_MODEL = os.environ.get('XAI_MODEL', 'grok-4-fast')
+    __XAI_MODEL = os.environ.get('XAI_MODEL', 'grok-4.3')
 
 __ENCRYPTION_KEY = _conf.get('general', 'ulge_private_key')
 if __ENCRYPTION_KEY == '':

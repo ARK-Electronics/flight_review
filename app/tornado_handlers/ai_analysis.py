@@ -686,8 +686,119 @@ class AIAnalysisHandler(TornadoRequestHandlerBase):
         self.write(template.render(
             log_id=log_id,
             has_api_key=has_api_key,
+            default_model=get_xai_model(),
             current_user=self.get_current_user(),
         ))
+
+
+class AIAnalysisModelsHandler(TornadoRequestHandlerBase):
+    """Tornado Request Handler that proxies the xAI models list."""
+
+    @tornado.web.authenticated
+    @tornado.gen.coroutine
+    def get(self, *args, **kwargs):
+        """Return the list of available models from the xAI API."""
+        api_key = get_xai_api_key()
+        if not api_key or not api_key.strip():
+            self.set_status(500)
+            self.set_header('Content-Type', 'application/json')
+            self.write(json.dumps({'error': 'xAI API key not configured'}))
+            return
+
+        http_client = AsyncHTTPClient()
+        request = HTTPRequest(
+            url='https://api.x.ai/v1/language-models',
+            method='GET',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+            },
+            request_timeout=15,
+            connect_timeout=10,
+        )
+
+        try:
+            response = yield http_client.fetch(request, raise_error=False)
+        except Exception as e:
+            self.set_status(502)
+            self.set_header('Content-Type', 'application/json')
+            self.write(json.dumps({'error': f'Failed to fetch models: {str(e)}'}))
+            return
+
+        if response.code != 200:
+            # Fallback to the standard /models endpoint (OpenAI-compatible)
+            try:
+                fallback_req = HTTPRequest(
+                    url='https://api.x.ai/v1/models',
+                    method='GET',
+                    headers={'Authorization': f'Bearer {api_key}'},
+                    request_timeout=15,
+                    connect_timeout=10,
+                )
+                response = yield http_client.fetch(fallback_req, raise_error=False)
+            except Exception as e:
+                self.set_status(502)
+                self.set_header('Content-Type', 'application/json')
+                self.write(json.dumps({'error': f'Failed to fetch models: {str(e)}'}))
+                return
+
+        if response.code != 200:
+            self.set_status(502)
+            self.set_header('Content-Type', 'application/json')
+            err = response.body.decode('utf-8', errors='replace')[:300] if response.body else ''
+            self.write(json.dumps({'error': f'xAI API error (HTTP {response.code}): {err}'}))
+            return
+
+        try:
+            payload = json.loads(response.body)
+        except (ValueError, json.JSONDecodeError):
+            self.set_status(502)
+            self.set_header('Content-Type', 'application/json')
+            self.write(json.dumps({'error': 'Invalid response from xAI API'}))
+            return
+
+        # Normalize to a simple list of model ids. xAI returns either
+        # {"models": [{"id": ...}, ...]} or {"data": [{"id": ...}, ...]}.
+        items = payload.get('models') or payload.get('data') or []
+        model_ids = []
+        for item in items:
+            if isinstance(item, dict):
+                mid = item.get('id') or item.get('name')
+                if mid:
+                    model_ids.append(mid)
+            elif isinstance(item, str):
+                model_ids.append(item)
+
+        # Filter to chat-capable models when input_modalities present
+        chat_ids = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            mid = item.get('id') or item.get('name')
+            if not mid:
+                continue
+            input_mods = item.get('input_modalities')
+            output_mods = item.get('output_modalities')
+            if input_mods is not None and 'text' not in input_mods:
+                continue
+            if output_mods is not None and 'text' not in output_mods:
+                continue
+            chat_ids.append(mid)
+        if chat_ids:
+            model_ids = chat_ids
+
+        # De-duplicate while preserving order
+        seen = set()
+        unique_ids = []
+        for mid in model_ids:
+            if mid not in seen:
+                seen.add(mid)
+                unique_ids.append(mid)
+
+        self.set_header('Content-Type', 'application/json')
+        self.write(json.dumps({
+            'models': unique_ids,
+            'default': get_xai_model(),
+        }))
 
 
 class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
@@ -727,6 +838,24 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
             self.write({'error': 'xAI API key not configured. Set xai_api_key in config or XAI_API_KEY env var.'})
             return
 
+        # Allow model override from request body, else fall back to configured default
+        model = get_xai_model()
+        try:
+            body_args = self.request.body
+            if body_args:
+                try:
+                    parsed = json.loads(body_args)
+                    if isinstance(parsed, dict) and parsed.get('model'):
+                        candidate = str(parsed['model']).strip()
+                        # Only allow safe model id characters
+                        if candidate and all(
+                                c.isalnum() or c in '-_.:' for c in candidate):
+                            model = candidate
+                except (ValueError, json.JSONDecodeError):
+                    pass
+        except Exception:
+            pass
+
         try:
             # Load the log file
             log_file_name = get_log_filename(log_id)
@@ -753,7 +882,6 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
             )
 
             # Call the xAI Grok API
-            model = get_xai_model()
             request_body = {
                 'model': model,
                 'messages': [
