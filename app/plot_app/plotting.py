@@ -721,26 +721,25 @@ class DataPlot:
                 ''', args={'x_range': p.x_range})
 
         # make it possible to hide graphs by clicking on the label
-        if len(p.legend) > 0:
-            p.legend.click_policy = "hide"
-            # Always move the legend outside the plot (right side) so it never
-            # overlaps the data and entries are never clipped when there are
-            # many of them. Expand the figure width to compensate, so the plot
-            # area itself keeps roughly its original width.
-            legend = p.legend[0]
-            max_label_len = 0
-            for item in legend.items:
-                label = item.label
-                if isinstance(label, dict):
-                    value = label.get('value', '')
-                else:
-                    value = getattr(label, 'value', '') or ''
-                if len(value) > max_label_len:
-                    max_label_len = len(value)
-            # ~7 px per character + padding for the color glyph & margins.
-            legend_width = min(400, max(120, max_label_len * 7 + 60))
-            p.width = plots_width + legend_width
-            p.add_layout(legend, 'right')
+        self._move_legend_outside()
+
+
+    # Fixed width reserved for the legend area so that all plots end up with
+    # the same total figure width regardless of legend contents.
+    _LEGEND_AREA_WIDTH = 200
+
+    def _move_legend_outside(self):
+        """Relocate the legend to the right of the plot area and widen the
+        figure by a fixed amount so every plot keeps a uniform total width
+        and the plot area itself is not shrunk by the legend.
+        """
+        p = self._p
+        if len(p.legend) == 0:
+            return
+        p.legend.click_policy = "hide"
+        legend = p.legend[0]
+        p.width = self._config['plot_width'] + self._LEGEND_AREA_WIDTH
+        p.add_layout(legend, 'right')
 
 
 class DataPlot2D(DataPlot):
@@ -805,6 +804,7 @@ class DataPlot2D(DataPlot):
     def _setup_plot(self):
         p = self._p
         p.toolbar.logo = None
+        self._move_legend_outside()
 
 
 class DataPlotSpec(DataPlot):
