@@ -941,12 +941,6 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
             for i, field in reporting_escs:
                 data_plot.add_graph([field], [colors8[i % 8]],
                                     ['ESC '+str(i)+' Current [A]'])
-            if len(reporting_escs) > 1:
-                fields = [f for _, f in reporting_escs]
-                data_plot.add_graph(
-                    [lambda data, fields=fields: ('esc_current_total',
-                        sum(data[f] for f in fields))],
-                    colors8[5:6], ['ESC Total Current [A]'])
     plot_flight_modes_background(data_plot, flight_mode_changes, vtol_states)
     if data_plot.finalize() is not None: plots.append(data_plot)
 

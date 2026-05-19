@@ -723,6 +723,11 @@ class DataPlot:
         # make it possible to hide graphs by clicking on the label
         if len(p.legend) > 0:
             p.legend.click_policy = "hide"
+            # Move the legend outside the plot area when it has many items so
+            # the bottom entries are not clipped (and remain clickable).
+            legend = p.legend[0]
+            if len(legend.items) > 6:
+                p.add_layout(legend, 'right')
 
 
 class DataPlot2D(DataPlot):
