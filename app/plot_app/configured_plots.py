@@ -1049,6 +1049,21 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
                     data_plot.add_graph([failsafe_field], [colors8[num_graphs % 8]],
                                         [failsafe_field.replace('_', ' ')])
                     num_graphs += 1
+
+            # ESC reported errors (per-ESC failure bitmask)
+            data_plot.change_dataset('esc_status')
+            if data_plot.dataset is not None and \
+                    'esc_count' in data_plot.dataset.data:
+                esc_count = int(data_plot.dataset.data['esc_count'][0])
+                for i in range(esc_count):
+                    field = 'esc['+str(i)+'].failures'
+                    if field in data_plot.dataset.data and \
+                            np.amax(data_plot.dataset.data[field]) >= 1:
+                        data_plot.add_graph([field], [colors8[num_graphs % 8]],
+                                            ['ESC '+str(i)+' Failures'])
+                        num_graphs += 1
+
+            data_plot.change_dataset('failsafe_flags')
             plot_flight_modes_background(data_plot, flight_mode_changes, vtol_states)
             if data_plot.finalize() is not None: plots.append(data_plot)
     except (KeyError, IndexError) as error:
