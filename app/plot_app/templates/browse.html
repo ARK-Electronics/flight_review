@@ -70,6 +70,7 @@
                 "search": {{ initial_search }}
             },
 {% endif %}
+            "pageLength": 25,
             "order": [[1, 'desc']],
             "ordering": true,
             "orderCellsTop": true,
@@ -96,6 +97,7 @@
                 "infoFiltered": "<br>(filtered from _MAX_ total entries)",
             },
             "serverSide": true,
+            "searchDelay": 500,
             "ajax": "browse_data_retrieval",
             "initComplete": function () {
                 var api = this.api();

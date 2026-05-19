@@ -30,35 +30,38 @@
       var waypoint_bounds = [];
 
       var mymap = L.map('mapid').setView([pos_datas[0][0], pos_datas[0][1]],15);
-      var mapboxAccessToken = '{{ mapbox_api_access_token }}';
+      var mapboxAccessToken = '{{ mapbox_api_access_token }}'.trim();
 
       var baseMaps = {};
 
       var osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 19
       });
       baseMaps["OpenStreetMap"] = osmLayer;
 
-      if (mapboxAccessToken) {
+      if (mapboxAccessToken.length > 0) {
           var mapboxSatStreets = L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token={accessToken}', {
-              attribution: 'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+              attribution: 'Imagery © <a href="https://www.mapbox.com/">Mapbox</a> | Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
               accessToken: mapboxAccessToken,
               tileSize: 512,
-              zoomOffset: -1
+              zoomOffset: -1,
+              maxZoom: 20
           });
           baseMaps["Mapbox Satellite Streets"] = mapboxSatStreets;
 
           var mapboxOutdoors = L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token={accessToken}', {
-              attribution: 'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+              attribution: 'Imagery © <a href="https://www.mapbox.com/">Mapbox</a> | Data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
               accessToken: mapboxAccessToken,
               tileSize: 512,
-              zoomOffset: -1
+              zoomOffset: -1,
+              maxZoom: 20
           });
           baseMaps["Mapbox Outdoors"] = mapboxOutdoors;
 
-          mapboxSatStreets.addTo(mymap); // Default
+          mapboxSatStreets.addTo(mymap); // Default when token is set
       } else {
-          osmLayer.addTo(mymap); // Default if no token
+          osmLayer.addTo(mymap); // Default fallback
       }
 
       L.control.layers(baseMaps).addTo(mymap);
