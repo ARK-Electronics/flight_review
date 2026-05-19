@@ -723,11 +723,24 @@ class DataPlot:
         # make it possible to hide graphs by clicking on the label
         if len(p.legend) > 0:
             p.legend.click_policy = "hide"
-            # Move the legend outside the plot area when it has many items so
-            # the bottom entries are not clipped (and remain clickable).
+            # Always move the legend outside the plot (right side) so it never
+            # overlaps the data and entries are never clipped when there are
+            # many of them. Expand the figure width to compensate, so the plot
+            # area itself keeps roughly its original width.
             legend = p.legend[0]
-            if len(legend.items) > 6:
-                p.add_layout(legend, 'right')
+            max_label_len = 0
+            for item in legend.items:
+                label = item.label
+                if isinstance(label, dict):
+                    value = label.get('value', '')
+                else:
+                    value = getattr(label, 'value', '') or ''
+                if len(value) > max_label_len:
+                    max_label_len = len(value)
+            # ~7 px per character + padding for the color glyph & margins.
+            legend_width = min(400, max(120, max_label_len * 7 + 60))
+            p.width = plots_width + legend_width
+            p.add_layout(legend, 'right')
 
 
 class DataPlot2D(DataPlot):
