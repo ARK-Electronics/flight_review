@@ -927,6 +927,26 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
         if 'sensors3v3[0]' in data_plot.dataset.data and \
                         np.amax(data_plot.dataset.data['sensors3v3[0]']) > 0.0001:
             data_plot.add_graph(['sensors3v3[0]'], colors8[6:7], ['3.3 V'])
+    # ESC reported current (per-ESC plus total) if any ESC reports it
+    data_plot.change_dataset('esc_status')
+    if data_plot.dataset and 'esc_count' in data_plot.dataset.data:
+        esc_count = int(data_plot.dataset.data['esc_count'][0])
+        reporting_escs = []
+        for i in range(esc_count):
+            field = 'esc['+str(i)+'].esc_current'
+            if field in data_plot.dataset.data and \
+                    np.amax(data_plot.dataset.data[field]) > 0.001:
+                reporting_escs.append((i, field))
+        if reporting_escs:
+            for i, field in reporting_escs:
+                data_plot.add_graph([field], [colors8[i % 8]],
+                                    ['ESC '+str(i)+' Current [A]'])
+            if len(reporting_escs) > 1:
+                fields = [f for _, f in reporting_escs]
+                data_plot.add_graph(
+                    [lambda data, fields=fields: ('esc_current_total',
+                        sum(data[f] for f in fields))],
+                    colors8[5:6], ['ESC Total Current [A]'])
     plot_flight_modes_background(data_plot, flight_mode_changes, vtol_states)
     if data_plot.finalize() is not None: plots.append(data_plot)
 
