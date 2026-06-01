@@ -4,7 +4,9 @@ Tornado handler for the upload page
 
 from __future__ import print_function
 import datetime
+import hashlib
 import json
+import logging
 import os
 from html import escape
 import sys
@@ -35,9 +37,56 @@ from .common import get_jinja_env, CustomHTTPError, generate_db_data_from_log_fi
     TornadoRequestHandlerBase
 from .send_email import send_notification_email, send_flightreport_email, send_admin_notification_email
 from .multipart_streamer import MultiPartStreamer
+from .security import (
+    parse_log_bounded, ParserTimeout, ParserCrashed,
+    get_rate_limiter, client_ip,
+)
 
 
 UPLOAD_TEMPLATE = 'upload.html'
+
+# Minimum plausible log size (smaller than this is rejected without parsing).
+MIN_UPLOAD_SIZE_BYTES = int(os.environ.get('FLIGHT_REVIEW_MIN_UPLOAD_BYTES', '1024'))
+
+# Per-IP upload rate limits (requests per window). Edge limits (nginx) should
+# also be configured.
+UPLOAD_RATE_LIMIT_PER_MINUTE = int(os.environ.get(
+    'FLIGHT_REVIEW_UPLOAD_PER_MINUTE', '10'))
+UPLOAD_RATE_LIMIT_PER_HOUR = int(os.environ.get(
+    'FLIGHT_REVIEW_UPLOAD_PER_HOUR', '60'))
+
+# ArduPilot .bin log magic bytes
+_ARDUPILOT_BIN_MAGIC = b'\xa3\x95'
+
+_upload_log = logging.getLogger('flight_review.upload')
+if not _upload_log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s upload %(message)s'))
+    _upload_log.addHandler(_h)
+    _upload_log.setLevel(logging.INFO)
+
+
+def _sha256_of_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, 'rb') as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _find_existing_log_by_hash(content_hash: str):
+    """Return existing log_id with this content hash, or None."""
+    if not content_hash:
+        return None
+    con = get_db_connection()
+    try:
+        cur = con.cursor()
+        cur.execute('select Id from Logs where ContentHash = ? limit 1', [content_hash])
+        row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        con.close()
 
 
 #pylint: disable=attribute-defined-outside-init,too-many-statements, unused-argument
@@ -212,6 +261,16 @@ class UploadHandler(TornadoRequestHandlerBase):
 
     async def post(self, *args, **kwargs):
         """ POST request callback """
+        # Per-IP rate limit (in-process; also configure edge limits in nginx)
+        ip = client_ip(self)
+        limiter = get_rate_limiter()
+        if not limiter.check('upload_min', ip, UPLOAD_RATE_LIMIT_PER_MINUTE, 60):
+            _upload_log.warning('rate_limited ip=%s window=1m', ip)
+            raise CustomHTTPError(429, 'Too many uploads, please slow down.')
+        if not limiter.check('upload_hr', ip, UPLOAD_RATE_LIMIT_PER_HOUR, 3600):
+            _upload_log.warning('rate_limited ip=%s window=1h', ip)
+            raise CustomHTTPError(429, 'Hourly upload quota exceeded.')
+
         if self.multipart_streamer:
             try:
                 self.multipart_streamer.data_complete()
@@ -289,6 +348,12 @@ class UploadHandler(TornadoRequestHandlerBase):
                 upload_file_name = file_obj.get_filename()
                 upload_file_name_lower = (upload_file_name or '').lower()
 
+                # Minimum size check (cheap rejection before any parsing)
+                upload_size = file_obj.get_size()
+                if upload_size < MIN_UPLOAD_SIZE_BYTES:
+                    raise CustomHTTPError(400,
+                        f'File too small ({upload_size} bytes); not a valid log.')
+
                 # check if the file is encrypted
                 ulge_key_path = get_ulge_private_key_path()
                 if ulge_key_path and upload_file_name_lower.endswith('.ulge'):
@@ -335,9 +400,45 @@ class UploadHandler(TornadoRequestHandlerBase):
                         header_len = len(ULog.HEADER_BYTES)
                         if file_obj.get_payload_partial(header_len) != ULog.HEADER_BYTES:
                             raise CustomHTTPError(400, 'Invalid File')
+                    elif ext == '.bin':
+                        # ArduPilot dataflash logs start with 0xA3 0x95
+                        if file_obj.get_payload_partial(len(_ARDUPILOT_BIN_MAGIC)) \
+                                != _ARDUPILOT_BIN_MAGIC:
+                            raise CustomHTTPError(400,
+                                'Invalid .bin file (missing ArduPilot magic bytes).')
+                    elif ext == '.csv':
+                        # Sniff: first bytes should be printable ASCII / CSV-like
+                        sniff = file_obj.get_payload_partial(64)
+                        if not sniff or any(b == 0 for b in sniff):
+                            raise CustomHTTPError(400,
+                                'Invalid .csv file (binary content detected).')
 
                     print('Moving uploaded file to', new_file_name)
                     file_obj.move(new_file_name)
+
+                # Dedupe by content hash so the same file uploaded N times
+                # only consumes one slot and one parse.
+                content_hash = ''
+                try:
+                    content_hash = _sha256_of_file(new_file_name)
+                except Exception as e:
+                    print(f'Hashing failed for {new_file_name}: {e}')
+                if content_hash:
+                    existing_log_id = _find_existing_log_by_hash(content_hash)
+                    if existing_log_id and existing_log_id != log_id:
+                        try:
+                            os.unlink(new_file_name)
+                        except OSError:
+                            pass
+                        _upload_log.info(
+                            'dedupe ip=%s uploader=%s existing_id=%s hash=%s',
+                            ip, uploader_username or '-', existing_log_id, content_hash[:12])
+                        url = '/plot_app?log=' + existing_log_id
+                        if should_redirect:
+                            self.redirect(url)
+                        else:
+                            self.write(json.dumps({'url': url}))
+                        return
 
                 if obfuscated == 1:
                     # TODO: randomize gps data, ...
@@ -356,10 +457,21 @@ class UploadHandler(TornadoRequestHandlerBase):
                     if uploader_username and _is_uploader_approved(uploader_username):
                         ulog_file_name = get_log_filename(log_id)
                         try:
-                            ulog = await IOLoop.current().run_in_executor(
-                                None, load_log_file, ulog_file_name)
+                            ulog = await parse_log_bounded(ulog_file_name)
                         except UnsupportedLogFormat as e:
                             raise CustomHTTPError(400, str(e)) from e
+                        except ParserTimeout as e:
+                            _upload_log.warning(
+                                'parse_timeout ip=%s uploader=%s id=%s size=%s',
+                                ip, uploader_username or '-', log_id, upload_size)
+                            raise CustomHTTPError(400,
+                                'Log parsing took too long; the file may be corrupt or unsupported.') from e
+                        except ParserCrashed as e:
+                            _upload_log.error(
+                                'parse_crashed ip=%s uploader=%s id=%s size=%s',
+                                ip, uploader_username or '-', log_id, upload_size)
+                            raise CustomHTTPError(400,
+                                'Log parser failed unexpectedly on this file.') from e
                     else:
                         is_pending = 1
                         print(f"Deferring parsing for log {log_id} "
@@ -373,13 +485,13 @@ class UploadHandler(TornadoRequestHandlerBase):
                         'insert into Logs (Id, Title, Description, '
                         'OriginalFilename, Date, AllowForAnalysis, Obfuscated, '
                         'Source, Email, WindSpeed, Rating, Feedback, Type, '
-                        'videoUrl, ErrorLabels, Public, Token, Uploader, Pending) values '
-                        '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        'videoUrl, ErrorLabels, Public, Token, Uploader, Pending, ContentHash) values '
+                        '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                         [log_id, title, description, upload_file_name,
                          datetime.datetime.now(), allow_for_analysis,
                          obfuscated, source, stored_email, wind_speed, rating,
                          feedback, upload_type, video_url, error_labels, is_public,
-                         token, uploader_username, is_pending])
+                         token, uploader_username, is_pending, content_hash])
 
                     if ulog is not None:
                         vehicle_data = update_vehicle_db_entry(cur, ulog, log_id, vehicle_name)
@@ -435,7 +547,7 @@ class UploadHandler(TornadoRequestHandlerBase):
                         info['uuid'] = escape(ulog.msg_info_dict['sys_uuid'])
                     branch_info = ''
                     if 'ver_sw_branch' in ulog.msg_info_dict:
-                        branch_info = ' (branch: '+ulog.msg_info_dict['ver_sw_branch']+')'
+                        branch_info = ' (branch: '+escape(ulog.msg_info_dict['ver_sw_branch'])+')'
                     if 'ver_sw' in ulog.msg_info_dict:
                         ver_sw = escape(ulog.msg_info_dict['ver_sw'])
                         info['software'] = ver_sw + branch_info
@@ -469,6 +581,12 @@ class UploadHandler(TornadoRequestHandlerBase):
                 admin_email = "logs@arkelectron.com"
                 if email != admin_email:
                     send_admin_notification_email(admin_email, email, full_plot_url, delete_url, edit_url, info)
+
+                _upload_log.info(
+                    'accepted ip=%s uploader=%s id=%s size=%s pending=%s source=%s type=%s hash=%s',
+                    ip, uploader_username or '-', log_id, upload_size,
+                    is_pending, source, upload_type,
+                    content_hash[:12] if content_hash else '-')
 
                 if should_redirect:
                     self.redirect(url)

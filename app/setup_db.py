@@ -62,6 +62,7 @@ with con:
                 "Token TEXT, " # Security token (currently used to delete the entry)
                 "Uploader TEXT DEFAULT '', " # username of the uploader (empty if anonymous)
                 "Pending INTEGER DEFAULT 0, " # if 1, log file has not been parsed yet (awaiting uploader approval)
+                "ContentHash TEXT DEFAULT '', " # SHA-256 of the uploaded file (used for dedupe)
                 "CONSTRAINT Id_PK PRIMARY KEY (Id))")
     else:
         # try to upgrade
@@ -99,6 +100,13 @@ with con:
         if not 'Pending' in column_names:
             print('Adding column Pending')
             cur.execute("ALTER TABLE Logs ADD COLUMN Pending INTEGER DEFAULT 0")
+        if not 'ContentHash' in column_names:
+            print('Adding column ContentHash')
+            cur.execute("ALTER TABLE Logs ADD COLUMN ContentHash TEXT DEFAULT ''")
+
+    # Index to make dedupe lookup O(log n)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_logs_content_hash "
+                "ON Logs(ContentHash)")
 
 
     # LogsGenerated table (information from the log file, for faster access)

@@ -35,6 +35,14 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
     """
     base class for a tornado request handler with custom error display
     """
+    def set_default_headers(self):
+        # Apply baseline security headers to every response
+        try:
+            from .security import apply_default_security_headers
+            apply_default_security_headers(self)
+        except Exception:
+            pass
+
     def get_current_user(self):
         user = self.get_secure_cookie("user")
         if user:
