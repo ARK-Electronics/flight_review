@@ -5,8 +5,10 @@ import time
 import traceback
 from passlib.hash import bcrypt
 import tornado.web
+from tornado.ioloop import IOLoop
 import uuid
 from .send_email import send_approval_email, send_account_approved_email, send_reset_password_email
+from .upload import process_pending_logs_for_user
 from config import get_domain_name, get_http_protocol
 
 # this is needed for the following imports
@@ -146,7 +148,11 @@ class ApproveUserHandler(TornadoRequestHandlerBase):
                     domain = get_domain_name()
                     login_url = f"{protocol}://{domain}/login"
                     send_account_approved_email(email, username, login_url)
-                    
+
+                    # Parse any logs the user uploaded while pending approval
+                    IOLoop.current().run_in_executor(
+                        None, process_pending_logs_for_user, username)
+
                     self.render_jinja('login.html', error=None, message=f"Account for {username} approved successfully!", next="/")
             else:
                 self.render_jinja('login.html', error="Invalid or expired approval link.", next="/")

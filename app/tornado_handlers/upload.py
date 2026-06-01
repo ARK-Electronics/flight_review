@@ -80,6 +80,81 @@ def update_vehicle_db_entry(cur, ulog, log_id, vehicle_name):
     return vehicle_data
 
 
+def _is_uploader_approved(username: str) -> bool:
+    """Return True if the given username corresponds to an approved user."""
+    if not username:
+        return False
+    con = get_db_connection()
+    try:
+        cur = con.cursor()
+        cur.execute("SELECT Approved FROM Users WHERE Username=?", [username])
+        row = cur.fetchone()
+        return bool(row and row[0])
+    finally:
+        con.close()
+
+
+def process_pending_log(log_id: str) -> bool:
+    """Parse a previously-deferred log and populate vehicle / generated data.
+
+    Clears the Pending flag on success. Returns True if processed, False if the
+    log no longer exists or parsing failed.
+    """
+    ulog_file_name = get_log_filename(log_id)
+    if not os.path.exists(ulog_file_name):
+        return False
+    try:
+        ulog = load_log_file(ulog_file_name)
+    except Exception as e:
+        print(f"process_pending_log: failed to parse {log_id}: {e}")
+        return False
+
+    con = get_db_connection()
+    try:
+        cur = con.cursor()
+        cur.execute('select Type, Public, Source from Logs where Id = ?', [log_id])
+        row = cur.fetchone()
+        if row is None:
+            return False
+        upload_type, is_public, source = row[0], row[1], row[2]
+        update_vehicle_db_entry(cur, ulog, log_id, '')
+        cur.execute('update Logs set Pending = 0 where Id = ?', [log_id])
+        con.commit()
+        cur.close()
+    finally:
+        con.close()
+
+    if upload_type == 'flightreport' and is_public and source != 'CI':
+        try:
+            generate_db_data_from_log_file(log_id, None)
+        except Exception as e:
+            print(f"process_pending_log: generate_db_data_from_log_file failed: {e}")
+        try:
+            generate_overview_img_from_id(log_id)
+        except Exception as e:
+            print(f"process_pending_log: generate_overview_img_from_id failed: {e}")
+    return True
+
+
+def process_pending_logs_for_user(username: str) -> int:
+    """Process all pending logs uploaded by the given user. Returns count processed."""
+    if not username:
+        return 0
+    con = get_db_connection()
+    try:
+        cur = con.cursor()
+        cur.execute('select Id from Logs where Uploader = ? and Pending = 1', [username])
+        log_ids = [r[0] for r in cur.fetchall()]
+        cur.close()
+    finally:
+        con.close()
+    count = 0
+    for log_id in log_ids:
+        if process_pending_log(log_id):
+            count += 1
+    return count
+
+
 @tornado.web.stream_request_body
 class UploadHandler(TornadoRequestHandlerBase):
     """ Upload log file Tornado request handler: handles page requests and POST
@@ -272,15 +347,23 @@ class UploadHandler(TornadoRequestHandlerBase):
                 token = str(binascii.hexlify(os.urandom(16)), 'ascii')
 
                 # Load the ulog file but only if not uploaded via CI.
-                # Then we open the DB connection.
+                # Also defer parsing entirely if the uploader is not an approved user
+                # (anonymous uploads or pending registrations) — the log will be
+                # parsed later when the user is approved.
                 ulog = None
+                is_pending = 0
                 if source != 'CI':
-                    ulog_file_name = get_log_filename(log_id)
-                    # Run heavy parsing in a separate thread to avoid blocking the event loop
-                    try:
-                        ulog = await IOLoop.current().run_in_executor(None, load_log_file, ulog_file_name)
-                    except UnsupportedLogFormat as e:
-                        raise CustomHTTPError(400, str(e)) from e
+                    if uploader_username and _is_uploader_approved(uploader_username):
+                        ulog_file_name = get_log_filename(log_id)
+                        try:
+                            ulog = await IOLoop.current().run_in_executor(
+                                None, load_log_file, ulog_file_name)
+                        except UnsupportedLogFormat as e:
+                            raise CustomHTTPError(400, str(e)) from e
+                    else:
+                        is_pending = 1
+                        print(f"Deferring parsing for log {log_id} "
+                              f"(uploader='{uploader_username}' not approved)")
 
                 # put additional data into a DB
                 con = get_db_connection()
@@ -290,13 +373,13 @@ class UploadHandler(TornadoRequestHandlerBase):
                         'insert into Logs (Id, Title, Description, '
                         'OriginalFilename, Date, AllowForAnalysis, Obfuscated, '
                         'Source, Email, WindSpeed, Rating, Feedback, Type, '
-                        'videoUrl, ErrorLabels, Public, Token, Uploader) values '
-                        '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        'videoUrl, ErrorLabels, Public, Token, Uploader, Pending) values '
+                        '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                         [log_id, title, description, upload_file_name,
                          datetime.datetime.now(), allow_for_analysis,
                          obfuscated, source, stored_email, wind_speed, rating,
                          feedback, upload_type, video_url, error_labels, is_public,
-                         token, uploader_username])
+                         token, uploader_username, is_pending])
 
                     if ulog is not None:
                         vehicle_data = update_vehicle_db_entry(cur, ulog, log_id, vehicle_name)

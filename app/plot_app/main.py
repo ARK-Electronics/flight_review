@@ -129,12 +129,33 @@ else:
                 print('GET[log]={}'.format(log_id))
                 ulog_file_name = get_log_filename(log_id)
 
-        ulog = load_log_file(ulog_file_name)
-        try:
-            px4_ulog = PX4ULog(ulog)
-            px4_ulog.add_roll_pitch_yaw()
-        except Exception:
-            px4_ulog = PX4ULogCompat(ulog, source_name=str(ulog.msg_info_dict.get('sys_name', 'Log')))
+        # Check if the log is pending parsing (uploader not yet approved).
+        # If so, show a friendly message and skip parsing entirely.
+        pending = False
+        if log_id:
+            try:
+                con = get_db_connection()
+                cur = con.cursor()
+                cur.execute('select Pending from Logs where Id = ?', [log_id])
+                row = cur.fetchone()
+                cur.close()
+                con.close()
+                if row is not None and row[0]:
+                    pending = True
+            except:
+                pass
+
+        if pending:
+            error_message = ('This log has been uploaded but is awaiting review. '
+                             'It will be available once the uploader\'s account '
+                             'is approved by an administrator.')
+        else:
+            ulog = load_log_file(ulog_file_name)
+            try:
+                px4_ulog = PX4ULog(ulog)
+                px4_ulog.add_roll_pitch_yaw()
+            except Exception:
+                px4_ulog = PX4ULogCompat(ulog, source_name=str(ulog.msg_info_dict.get('sys_name', 'Log')))
 
     except ULogException:
         error_message = ('A parsing error occured when trying to read the file - '

@@ -60,6 +60,8 @@ with con:
                 "ErrorLabels TEXT, " # the type of error (if any) that occurred during flight
                 "Public INT, " # if 1 this log can be publicly listed
                 "Token TEXT, " # Security token (currently used to delete the entry)
+                "Uploader TEXT DEFAULT '', " # username of the uploader (empty if anonymous)
+                "Pending INTEGER DEFAULT 0, " # if 1, log file has not been parsed yet (awaiting uploader approval)
                 "CONSTRAINT Id_PK PRIMARY KEY (Id))")
     else:
         # try to upgrade
@@ -94,6 +96,9 @@ with con:
         if not 'Uploader' in column_names:
             print('Adding column Uploader')
             cur.execute("ALTER TABLE Logs ADD COLUMN Uploader TEXT DEFAULT ''")
+        if not 'Pending' in column_names:
+            print('Adding column Pending')
+            cur.execute("ALTER TABLE Logs ADD COLUMN Pending INTEGER DEFAULT 0")
 
 
     # LogsGenerated table (information from the log file, for faster access)
