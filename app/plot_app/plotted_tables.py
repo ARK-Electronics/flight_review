@@ -117,7 +117,7 @@ def get_info_table_html(ulog, px4_ulog, db_data, vehicle_data, vtol_states):
         release_str_suffix = ')</small>'
     branch_info = ''
     if 'ver_sw_branch' in ulog.msg_info_dict:
-        branch_info = '<br> branch: '+ulog.msg_info_dict['ver_sw_branch']
+        branch_info = '<br> branch: '+escape(ulog.msg_info_dict['ver_sw_branch'])
     if 'ver_sw' in ulog.msg_info_dict:
         ver_sw = escape(ulog.msg_info_dict['ver_sw'])
         ver_sw_link = 'https://github.com/PX4/Firmware/commit/'+ver_sw
