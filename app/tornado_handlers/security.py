@@ -39,8 +39,14 @@ PARSER_RLIMIT_CPU_SECONDS = int(os.environ.get(
 PARSER_WALL_TIMEOUT_SECONDS = int(os.environ.get(
     'FLIGHT_REVIEW_PARSER_WALL_TIMEOUT_SECONDS', '240'))
 # Maximum concurrent parses across the whole worker process.
+# Each worker may use up to PARSER_RLIMIT_AS_BYTES, so on a small instance the
+# product (concurrency * RLIMIT_AS) must stay under the container's RAM or the
+# kernel OOM-kills the whole container before any single worker's rlimit fires.
+# Default to 1 to match a 1 CPU / 2 GB instance (base process + one ~2 GiB
+# worker); concurrent uploads are absorbed by horizontal autoscaling. Raise this
+# (via the env var) only on instances with proportionally more RAM.
 PARSER_MAX_CONCURRENCY = int(os.environ.get(
-    'FLIGHT_REVIEW_PARSER_MAX_CONCURRENCY', '2'))
+    'FLIGHT_REVIEW_PARSER_MAX_CONCURRENCY', '1'))
 
 
 def _parser_initializer():
