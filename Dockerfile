@@ -24,7 +24,10 @@ RUN python app/setup_db.py
 # Expose port (Kinsta will set the PORT env var)
 EXPOSE 8080
 
-# Start the application
-CMD cd app && python serve.py --port ${PORT:-8080} --address 0.0.0.0 \
+# Start the application.
+# Run setup_db.py at startup (not just build time) so the persistent-volume
+# database is migrated to the current schema before serving. setup_db.py is
+# idempotent: it only adds missing columns/indexes on an existing DB.
+CMD cd app && python setup_db.py && python serve.py --port ${PORT:-8080} --address 0.0.0.0 \
     --allow-websocket-origin=ark-flight-review-9cuak.kinsta.app \
     --host=ark-flight-review-9cuak.kinsta.app:443
