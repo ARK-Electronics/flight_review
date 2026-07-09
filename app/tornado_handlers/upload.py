@@ -13,6 +13,7 @@ import sys
 import traceback
 import uuid
 import binascii
+import tornado.escape
 import tornado.web
 from tornado.ioloop import IOLoop
 
@@ -216,11 +217,23 @@ class UploadHandler(TornadoRequestHandlerBase):
     def prepare(self):
         """ called before a new request """
         if self.request.method.upper() == 'POST':
+            # Uploads require a registered & approved account. Reject here,
+            # before the request body is streamed, so anonymous clients don't
+            # transfer the whole file just to be turned away. The approval
+            # re-check covers accounts revoked after their login cookie was set.
+            username = self.current_user
+            if not username or not _is_uploader_approved(username):
+                _upload_log.warning('rejected_unauthenticated ip=%s uploader=%s',
+                                    client_ip(self), username or '-')
+                raise CustomHTTPError(
+                    403, 'Uploading requires a registered, approved account. '
+                         'Please log in and try again.')
+
             try:
                 total = int(self.request.headers.get("Content-Length", "0"))
             except KeyError:
                 total = 0
-            
+
             self.multipart_streamer = MultiPartStreamer(total)
 
     def data_received(self, chunk):
@@ -236,6 +249,13 @@ class UploadHandler(TornadoRequestHandlerBase):
             # we need to redirect to the bokeh app
             url = "/plot_app?log="+log_id
             self.redirect(url)
+            return
+
+        # The upload form is only usable with an approved account (POSTs are
+        # rejected in prepare()), so send anonymous visitors to the login page.
+        # Viewing plots (the ?log= redirect above) stays public.
+        if not self.current_user:
+            self.redirect('/login?next=' + tornado.escape.url_escape('/upload'))
             return
 
         initial_email = ''
@@ -447,35 +467,28 @@ class UploadHandler(TornadoRequestHandlerBase):
                 # generate a token: secure random string (url-safe)
                 token = str(binascii.hexlify(os.urandom(16)), 'ascii')
 
-                # Load the ulog file but only if not uploaded via CI.
-                # Also defer parsing entirely if the uploader is not an approved user
-                # (anonymous uploads or pending registrations) — the log will be
-                # parsed later when the user is approved.
+                # Load the ulog file but only if not uploaded via CI. Only
+                # approved accounts reach this point (enforced in prepare()),
+                # so parsing happens immediately — no deferred/pending state.
                 ulog = None
-                is_pending = 0
                 if source != 'CI':
-                    if uploader_username and _is_uploader_approved(uploader_username):
-                        ulog_file_name = get_log_filename(log_id)
-                        try:
-                            ulog = await parse_log_bounded(ulog_file_name)
-                        except UnsupportedLogFormat as e:
-                            raise CustomHTTPError(400, str(e)) from e
-                        except ParserTimeout as e:
-                            _upload_log.warning(
-                                'parse_timeout ip=%s uploader=%s id=%s size=%s',
-                                ip, uploader_username or '-', log_id, upload_size)
-                            raise CustomHTTPError(400,
-                                'Log parsing took too long; the file may be corrupt or unsupported.') from e
-                        except ParserCrashed as e:
-                            _upload_log.error(
-                                'parse_crashed ip=%s uploader=%s id=%s size=%s',
-                                ip, uploader_username or '-', log_id, upload_size)
-                            raise CustomHTTPError(400,
-                                'Log parser failed unexpectedly on this file.') from e
-                    else:
-                        is_pending = 1
-                        print(f"Deferring parsing for log {log_id} "
-                              f"(uploader='{uploader_username}' not approved)")
+                    ulog_file_name = get_log_filename(log_id)
+                    try:
+                        ulog = await parse_log_bounded(ulog_file_name)
+                    except UnsupportedLogFormat as e:
+                        raise CustomHTTPError(400, str(e)) from e
+                    except ParserTimeout as e:
+                        _upload_log.warning(
+                            'parse_timeout ip=%s uploader=%s id=%s size=%s',
+                            ip, uploader_username or '-', log_id, upload_size)
+                        raise CustomHTTPError(400,
+                            'Log parsing took too long; the file may be corrupt or unsupported.') from e
+                    except ParserCrashed as e:
+                        _upload_log.error(
+                            'parse_crashed ip=%s uploader=%s id=%s size=%s',
+                            ip, uploader_username or '-', log_id, upload_size)
+                        raise CustomHTTPError(400,
+                            'Log parser failed unexpectedly on this file.') from e
 
                 # put additional data into a DB
                 con = get_db_connection()
@@ -491,7 +504,7 @@ class UploadHandler(TornadoRequestHandlerBase):
                          datetime.datetime.now(), allow_for_analysis,
                          obfuscated, source, stored_email, wind_speed, rating,
                          feedback, upload_type, video_url, error_labels, is_public,
-                         token, uploader_username, is_pending, content_hash])
+                         token, uploader_username, 0, content_hash])
 
                     if ulog is not None:
                         vehicle_data = update_vehicle_db_entry(cur, ulog, log_id, vehicle_name)
@@ -583,9 +596,9 @@ class UploadHandler(TornadoRequestHandlerBase):
                     send_admin_notification_email(admin_email, email, full_plot_url, delete_url, edit_url, info)
 
                 _upload_log.info(
-                    'accepted ip=%s uploader=%s id=%s size=%s pending=%s source=%s type=%s hash=%s',
+                    'accepted ip=%s uploader=%s id=%s size=%s source=%s type=%s hash=%s',
                     ip, uploader_username or '-', log_id, upload_size,
-                    is_pending, source, upload_type,
+                    source, upload_type,
                     content_hash[:12] if content_hash else '-')
 
                 if should_redirect:
