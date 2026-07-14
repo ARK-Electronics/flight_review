@@ -38,6 +38,11 @@ class LoginHandler(TornadoRequestHandlerBase):
                 if bcrypt.verify(password, password_hash):
                     if approved:
                         self.set_secure_cookie("user", username)
+                        # Parse any logs that were deferred while this account
+                        # looked unapproved (or was still pending). Safe no-op
+                        # when there are none.
+                        IOLoop.current().run_in_executor(
+                            None, process_pending_logs_for_user, username)
                         self.redirect(next_url)
                         return
                     else:

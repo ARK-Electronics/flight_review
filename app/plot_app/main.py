@@ -129,8 +129,9 @@ else:
                 print('GET[log]={}'.format(log_id))
                 ulog_file_name = get_log_filename(log_id)
 
-        # Check if the log is pending parsing (uploader not yet approved).
-        # If so, show a friendly message and skip parsing entirely.
+        # Check if the log is pending parsing (uploader not yet approved, or a
+        # historical mis-deferred upload). Try to process it now so approved
+        # users (and stranded logs with an empty Uploader) become viewable.
         pending = False
         if log_id:
             try:
@@ -144,6 +145,17 @@ else:
                     pending = True
             except:
                 pass
+
+            if pending:
+                try:
+                    parent_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
+                    if parent_dir not in sys.path:
+                        sys.path.insert(0, parent_dir)
+                    from tornado_handlers.upload import process_pending_log
+                    if process_pending_log(log_id):
+                        pending = False
+                except Exception as e:
+                    print('Failed to process pending log {}: {}'.format(log_id, e))
 
         if pending:
             error_message = ('This log has been uploaded but is awaiting review. '

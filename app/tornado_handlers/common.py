@@ -13,7 +13,7 @@ import tornado.web
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
 from db_entry import DBDataGenerated
-from config import get_db_connection
+from config import get_db_connection, get_db_filename
 
 #pylint: disable=abstract-method
 
