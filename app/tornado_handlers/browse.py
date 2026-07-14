@@ -16,7 +16,7 @@ from db_entry import DBData, DBDataGenerated
 from helper import flight_modes_table, get_airframe_data
 
 #pylint: disable=relative-beyond-top-level,too-many-statements
-from .common import get_jinja_env, get_generated_db_data_from_log, TornadoRequestHandlerBase
+from .common import get_generated_db_data_from_log, TornadoRequestHandlerBase
 
 BROWSE_TEMPLATE = 'browse.html'
 
@@ -352,6 +352,7 @@ class BrowseDataRetrievalHandler(TornadoRequestHandlerBase):
     """ Ajax data retrieval handler """
 
     def write_error(self, status_code, **kwargs):
+        """Return JSON error payloads for API failures."""
         self.set_header('Content-Type', 'application/json')
         error_msg = 'Unknown error'
         if 'exc_info' in kwargs:

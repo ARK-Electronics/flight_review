@@ -27,7 +27,9 @@ from tornado_handlers.db_info_json import DBInfoHandler
 from tornado_handlers.three_d import ThreeDHandler
 from tornado_handlers.radio_controller import RadioControllerHandler
 from tornado_handlers.error_labels import UpdateErrorLabelHandler
-from tornado_handlers.auth import LoginHandler, LogoutHandler, RegisterHandler, ApproveUserHandler, ForgotPasswordHandler, ResetPasswordHandler
+from tornado_handlers.auth import (
+    LoginHandler, LogoutHandler, RegisterHandler, ApproveUserHandler,
+    ForgotPasswordHandler, ResetPasswordHandler)
 from tornado_handlers.admin import AdminUsersHandler, AdminUsersAPIHandler
 from tornado_handlers.ai_analysis import AIAnalysisHandler, AIAnalysisAPIHandler, \
     AIAnalysisModelsHandler
@@ -166,26 +168,38 @@ extra_patterns = [
 server = None
 custom_port = 5006
 
-# Bokeh Auth Provider
-from bokeh.server.auth_provider import AuthProvider
+# Bokeh Auth Provider (import deferred until after local handlers are loaded)
+from bokeh.server.auth_provider import AuthProvider  # pylint: disable=wrong-import-order,ungrouped-imports
+
+
 class FlightReviewAuthProvider(AuthProvider):
-    def get_user(self, request_handler):
+    """Read the Flight Review session cookie for Bokeh auth."""
+
+    # Bokeh's type stubs mark get_user as a property; the runtime API is a
+    # method taking the request handler. Suppress the mismatch.
+    def get_user(self, request_handler):  # pylint: disable=arguments-differ,invalid-overridden-method
+        """Return the signed-in username, or None."""
         return request_handler.get_secure_cookie("user")
 
     @property
     def login_url(self):
+        """URL of the login page."""
         return "/login"
 
 while server is None:
     try:
         # Configure Authentication
         server_kwargs['auth_provider'] = FlightReviewAuthProvider()
-        
-        server = Server(applications, extra_patterns=extra_patterns, **server_kwargs)
-        
-        server._tornado.settings['cookie_secret'] = os.environ.get('COOKIE_SECRET', 'change_me_to_a_random_string')
+
+        server = Server(
+            applications, extra_patterns=extra_patterns, **server_kwargs)
+
+        # pylint: disable=protected-access
+        cookie_secret = os.environ.get(
+            'COOKIE_SECRET', 'change_me_to_a_random_string')
+        server._tornado.settings['cookie_secret'] = cookie_secret
         server._tornado.settings['login_url'] = '/login'
-        
+
     except OSError as e:
         # if we get a port bind error and running locally with '-f',
         # automatically select another port (useful for opening multiple logs)

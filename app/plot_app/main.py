@@ -167,7 +167,9 @@ else:
                 px4_ulog = PX4ULog(ulog)
                 px4_ulog.add_roll_pitch_yaw()
             except Exception:
-                px4_ulog = PX4ULogCompat(ulog, source_name=str(ulog.msg_info_dict.get('sys_name', 'Log')))
+                sys_name = str(
+                    ulog.msg_info_dict.get('sys_name', 'Log'))
+                px4_ulog = PX4ULogCompat(ulog, source_name=sys_name)
 
     except ULogException:
         error_message = ('A parsing error occured when trying to read the file - '
@@ -221,14 +223,14 @@ else:
                     if row:
                         is_admin = row[0]
                         user_email = row[1]
-                        
+
                         if is_admin:
                             can_delete = True
                         elif user_email and db_data.email and user_email == db_data.email:
                             can_delete = True
                         elif db_data.uploader and user == db_data.uploader:
                             can_delete = True
-                
+
                 if can_delete:
                     delete_url = f"edit_entry?action=delete&log={log_id}"
                     edit_notes_url = f"edit_entry?action=edit_notes&log={log_id}"

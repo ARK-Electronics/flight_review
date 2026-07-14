@@ -34,9 +34,11 @@ from logs.loader import UnsupportedLogFormat
 
 
 #pylint: disable=relative-beyond-top-level
-from .common import get_jinja_env, CustomHTTPError, generate_db_data_from_log_file, \
+from .common import CustomHTTPError, generate_db_data_from_log_file, \
     TornadoRequestHandlerBase
-from .send_email import send_notification_email, send_flightreport_email, send_admin_notification_email
+from .send_email import (
+    send_notification_email, send_flightreport_email,
+    send_admin_notification_email)
 from .multipart_streamer import MultiPartStreamer
 from .security import (
     parse_log_bounded, ParserTimeout, ParserCrashed,
@@ -61,19 +63,19 @@ _ARDUPILOT_BIN_MAGIC = b'\xa3\x95'
 
 _upload_log = logging.getLogger('flight_review.upload')
 if not _upload_log.handlers:
-    _h = logging.StreamHandler()
-    _h.setFormatter(logging.Formatter(
+    _stream_handler = logging.StreamHandler()
+    _stream_handler.setFormatter(logging.Formatter(
         '%(asctime)s %(levelname)s upload %(message)s'))
-    _upload_log.addHandler(_h)
+    _upload_log.addHandler(_stream_handler)
     _upload_log.setLevel(logging.INFO)
 
 
 def _sha256_of_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, 'rb') as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b''):
-            h.update(chunk)
-    return h.hexdigest()
+    digest = hashlib.sha256()
+    with open(path, 'rb') as file_handle:
+        for chunk in iter(lambda: file_handle.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _find_existing_log_by_hash(content_hash: str):
@@ -282,13 +284,13 @@ class UploadHandler(TornadoRequestHandlerBase):
     async def post(self, *args, **kwargs):
         """ POST request callback """
         # Per-IP rate limit (in-process; also configure edge limits in nginx)
-        ip = client_ip(self)
+        client_addr = client_ip(self)
         limiter = get_rate_limiter()
-        if not limiter.check('upload_min', ip, UPLOAD_RATE_LIMIT_PER_MINUTE, 60):
-            _upload_log.warning('rate_limited ip=%s window=1m', ip)
+        if not limiter.check('upload_min', client_addr, UPLOAD_RATE_LIMIT_PER_MINUTE, 60):
+            _upload_log.warning('rate_limited ip=%s window=1m', client_addr)
             raise CustomHTTPError(429, 'Too many uploads, please slow down.')
-        if not limiter.check('upload_hr', ip, UPLOAD_RATE_LIMIT_PER_HOUR, 3600):
-            _upload_log.warning('rate_limited ip=%s window=1h', ip)
+        if not limiter.check('upload_hr', client_addr, UPLOAD_RATE_LIMIT_PER_HOUR, 3600):
+            _upload_log.warning('rate_limited ip=%s window=1h', client_addr)
             raise CustomHTTPError(429, 'Hourly upload quota exceeded.')
 
         if self.multipart_streamer:
@@ -330,7 +332,7 @@ class UploadHandler(TornadoRequestHandlerBase):
                 is_public = 0
                 vehicle_name = ''
                 error_labels = ''
-                
+
                 uploader_username = ''
                 if self.current_user:
                     uploader_username = self.current_user
@@ -404,12 +406,14 @@ class UploadHandler(TornadoRequestHandlerBase):
                         ext = '.bin'
                     elif upload_file_name_lower.endswith('.csv'):
                         ext = '.csv'
-                    elif upload_file_name_lower.endswith('.bbl') or upload_file_name_lower.endswith('.txt'):
+                    elif (upload_file_name_lower.endswith('.bbl') or
+                          upload_file_name_lower.endswith('.txt')):
                         # Accept upload but provide a clear error message.
                         raise CustomHTTPError(
                             400,
-                            'Betaflight Blackbox binary logs (.bbl/.txt) are not directly supported yet. '
-                            'Please export to CSV using Blackbox Explorer and upload the CSV.'
+                            'Betaflight Blackbox binary logs (.bbl/.txt) '
+                            'are not directly supported yet. Please export '
+                            'to CSV using Blackbox Explorer and upload the CSV.'
                         )
                     else:
                         ext = '.ulg'
@@ -452,7 +456,8 @@ class UploadHandler(TornadoRequestHandlerBase):
                             pass
                         _upload_log.info(
                             'dedupe ip=%s uploader=%s existing_id=%s hash=%s',
-                            ip, uploader_username or '-', existing_log_id, content_hash[:12])
+                            client_addr, uploader_username or '-',
+                            existing_log_id, content_hash[:12])
                         url = '/plot_app?log=' + existing_log_id
                         if should_redirect:
                             self.redirect(url)
@@ -480,14 +485,19 @@ class UploadHandler(TornadoRequestHandlerBase):
                     except ParserTimeout as e:
                         _upload_log.warning(
                             'parse_timeout ip=%s uploader=%s id=%s size=%s',
-                            ip, uploader_username or '-', log_id, upload_size)
-                        raise CustomHTTPError(400,
-                            'Log parsing took too long; the file may be corrupt or unsupported.') from e
+                            client_addr, uploader_username or '-',
+                            log_id, upload_size)
+                        raise CustomHTTPError(
+                            400,
+                            'Log parsing took too long; the file may be '
+                            'corrupt or unsupported.') from e
                     except ParserCrashed as e:
                         _upload_log.error(
                             'parse_crashed ip=%s uploader=%s id=%s size=%s',
-                            ip, uploader_username or '-', log_id, upload_size)
-                        raise CustomHTTPError(400,
+                            client_addr, uploader_username or '-',
+                            log_id, upload_size)
+                        raise CustomHTTPError(
+                            400,
                             'Log parser failed unexpectedly on this file.') from e
 
                 # put additional data into a DB
@@ -498,7 +508,8 @@ class UploadHandler(TornadoRequestHandlerBase):
                         'insert into Logs (Id, Title, Description, '
                         'OriginalFilename, Date, AllowForAnalysis, Obfuscated, '
                         'Source, Email, WindSpeed, Rating, Feedback, Type, '
-                        'videoUrl, ErrorLabels, Public, Token, Uploader, Pending, ContentHash) values '
+                        'videoUrl, ErrorLabels, Public, Token, Uploader, '
+                        'Pending, ContentHash) values '
                         '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                         [log_id, title, description, upload_file_name,
                          datetime.datetime.now(), allow_for_analysis,
@@ -543,7 +554,10 @@ class UploadHandler(TornadoRequestHandlerBase):
                     try:
                         px4_ulog = PX4ULog(ulog)
                     except Exception:
-                        px4_ulog = PX4ULogCompat(ulog, source_name=str(ulog.msg_info_dict.get('sys_name', 'Log')))
+                        sys_name = str(
+                            ulog.msg_info_dict.get('sys_name', 'Log'))
+                        px4_ulog = PX4ULogCompat(
+                            ulog, source_name=sys_name)
                     info['type'] = px4_ulog.get_mav_type()
                     airframe_name_tuple = get_airframe_name(ulog)
                     if airframe_name_tuple is not None:
@@ -593,11 +607,13 @@ class UploadHandler(TornadoRequestHandlerBase):
 
                 admin_email = "logs@arkelectron.com"
                 if email != admin_email:
-                    send_admin_notification_email(admin_email, email, full_plot_url, delete_url, edit_url, info)
+                    send_admin_notification_email(
+                        admin_email, email, full_plot_url,
+                        delete_url, edit_url, info)
 
                 _upload_log.info(
                     'accepted ip=%s uploader=%s id=%s size=%s source=%s type=%s hash=%s',
-                    ip, uploader_username or '-', log_id, upload_size,
+                    client_addr, uploader_username or '-', log_id, upload_size,
                     source, upload_type,
                     content_hash[:12] if content_hash else '-')
 

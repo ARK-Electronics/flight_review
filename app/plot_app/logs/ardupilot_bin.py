@@ -139,6 +139,35 @@ def read_ardupilot_bin(path: str) -> CompatULog:
     reader_out = _CappedTextIO(4096)
     reader_err = _CappedTextIO(4096)
 
+    # Raw accumulators — must be initialized before the parse loop that appends
+    # to them (previously these sat after the loop and raised UnboundLocalError
+    # on the first ATT/IMU/... message).
+    att_t: List[int] = []
+    att_roll: List[float] = []
+    att_pitch: List[float] = []
+    att_yaw: List[float] = []
+
+    gyro_t: List[int] = []
+    gyro_x: List[float] = []
+    gyro_y: List[float] = []
+    gyro_z: List[float] = []
+
+    gps_t: List[int] = []
+    gps_lat: List[int] = []
+    gps_lon: List[int] = []
+    gps_alt_m: List[float] = []
+    gps_fix: List[int] = []
+
+    rcin_t: List[int] = []
+    rcin: List[List[int]] = []
+
+    rcou_t: List[int] = []
+    rcou: List[List[int]] = []
+
+    bat_t: List[int] = []
+    bat_v: List[float] = []
+    bat_a: List[float] = []
+
     orig_fast_index = os.environ.get('PYMAVLINK_FAST_INDEX')
     os.environ['PYMAVLINK_FAST_INDEX'] = '0'
     try:
@@ -261,37 +290,6 @@ def read_ardupilot_bin(path: str) -> CompatULog:
             os.environ.pop('PYMAVLINK_FAST_INDEX', None)
         else:
             os.environ['PYMAVLINK_FAST_INDEX'] = orig_fast_index
-
-    # Raw accumulators
-    att_t: List[int] = []
-    att_roll: List[float] = []
-    att_pitch: List[float] = []
-    att_yaw: List[float] = []
-
-    gyro_t: List[int] = []
-    gyro_x: List[float] = []
-    gyro_y: List[float] = []
-    gyro_z: List[float] = []
-
-    gps_t: List[int] = []
-    gps_lat: List[int] = []
-    gps_lon: List[int] = []
-    gps_alt_m: List[float] = []
-    gps_fix: List[int] = []
-
-    rcin_t: List[int] = []
-    rcin: List[List[int]] = []
-
-    rcou_t: List[int] = []
-    rcou: List[List[int]] = []
-
-    bat_t: List[int] = []
-    bat_v: List[float] = []
-    bat_a: List[float] = []
-
-    # Iterate messages
-    # DFReader_binary is not guaranteed to be directly iterable across pymavlink versions.
-    # Note: message parsing happens in the guarded block above.
 
     # Build datasets
     datasets: List[CompatDataset] = []

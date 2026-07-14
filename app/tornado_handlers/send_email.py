@@ -1,18 +1,17 @@
 """ Methods for sending notification emails """
 from __future__ import print_function
 
-import sys
-import os
-import smtplib
-import requests
 import json
-from smtplib import SMTP_SSL, SMTP
-
+import os
+import sys
 from email.mime.text import MIMEText
+from smtplib import SMTP, SMTP_SSL
+
+import requests
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plot_app'))
-from config import email_config, email_notifications_config
+from config import email_config
 
 
 def send_notification_email(email_address, plot_url, delete_url, edit_url, info):
@@ -112,7 +111,7 @@ def send_approval_email(admin_email, username, user_email, approval_url):
     print(f"send_approval_email called with admin_email: '{admin_email}'", flush=True)
 
     subject = f"New User Registration: {username}"
-    
+
     content = f"""\
 Hello Admin,
 
@@ -133,7 +132,7 @@ def send_account_approved_email(user_email, username, login_url):
     print(f"send_account_approved_email called with user_email: '{user_email}'", flush=True)
 
     subject = "Flight Review Account Approved"
-    
+
     content = f"""\
 Hello {username},
 
@@ -146,11 +145,14 @@ You can now login here:
     return _send_email([user_email], subject, content)
 
 
-def send_admin_notification_email(admin_email, uploader_email, plot_url, delete_url, edit_url, info):
+def send_admin_notification_email(
+        admin_email, uploader_email, plot_url, delete_url, edit_url, info):
     """ send a notification email to admin after uploading a plot
         :param info: dictionary with additional info
     """
-    print(f"send_admin_notification_email called with email: '{admin_email}'", flush=True)
+    print(
+        f"send_admin_notification_email called with email: '{admin_email}'",
+        flush=True)
 
     if admin_email == '':
         return True
@@ -188,7 +190,8 @@ Use the following link to delete the log:
 
 Use the following link to edit the flight notes:
 {edit_url}
-""".format(plot_url=plot_url, delete_url=delete_url, edit_url=edit_url, uploader_email=uploader_email, **info)
+""".format(plot_url=plot_url, delete_url=delete_url, edit_url=edit_url,
+            uploader_email=uploader_email, **info)
 
     return _send_email(destination, subject, content)
 
@@ -231,7 +234,9 @@ def _send_email(destination, subject, content):
         sender = email_config['sender']
         msg['From'] = sender # some SMTP servers will do this automatically
 
-        print(f"Attempting to send email to {destination} via {email_config['smtpserver']}...", flush=True)
+        smtpserver = email_config['smtpserver']
+        print(f"Attempting to send email to {destination} via {smtpserver}...",
+              flush=True)
 
         server = email_config['smtpserver']
         port = int(email_config.get('smtpport', 465))
@@ -260,7 +265,13 @@ def _send_email(destination, subject, content):
 
     except Exception as exc:
         print(f"Mail failed to send to {destination}. Error: {str(exc)}", flush=True)
-        print(f"SMTP Config: Server={email_config.get('smtpserver')}, Port={email_config.get('smtpport', 465)}, User={email_config.get('user_name')}, Sender={email_config.get('sender')}", flush=True)
+        print(
+            "SMTP Config: Server={}, Port={}, User={}, Sender={}".format(
+                email_config.get('smtpserver'),
+                email_config.get('smtpport', 465),
+                email_config.get('user_name'),
+                email_config.get('sender')),
+            flush=True)
         return False
     return True
 
@@ -268,14 +279,14 @@ def _send_email(destination, subject, content):
 def _send_email_via_api(destination, subject, content):
     """ Send email using SendLayer REST API """
     print(f"Attempting to send email to {destination} via SendLayer API...", flush=True)
-    
+
     url = "https://console.sendlayer.com/api/v1/email"
     api_key = email_config['sendlayer_api_key']
     sender_email = email_config['sender']
-    
+
     # Format recipients
     to_list = [{"email": email, "name": email} for email in destination]
-    
+
     payload = {
         "From": {
             "name": "Flight Review",
@@ -283,26 +294,31 @@ def _send_email_via_api(destination, subject, content):
         },
         "To": to_list,
         "Subject": subject,
-        "ContentType": "HTML", # Using HTML to support newlines properly if needed, but content is plain text
+        # Using HTML so newlines render; body is still plain text content
+        "ContentType": "HTML",
         "HTMLContent": f"<html><body><pre>{content}</pre></body></html>",
         "PlainContent": content
     }
-    
+
     headers = {
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json'
     }
-    
+
     try:
         response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
-        
+
         if response.status_code == 200:
-            print(f"Email sent successfully via API. Response: {response.text}", flush=True)
+            print(
+                f"Email sent successfully via API. Response: {response.text}",
+                flush=True)
             return True
-        else:
-            print(f"Failed to send email via API. Status: {response.status_code}, Response: {response.text}", flush=True)
-            return False
-            
+        print(
+            f"Failed to send email via API. Status: "
+            f"{response.status_code}, Response: {response.text}",
+            flush=True)
+        return False
+
     except Exception as e:
         print(f"Exception when sending email via API: {str(e)}", flush=True)
         return False

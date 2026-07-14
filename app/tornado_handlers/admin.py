@@ -14,7 +14,8 @@ from tornado.ioloop import IOLoop
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
 from config import get_db_filename
-from .common import TornadoRequestHandlerBase, get_jinja_env
+#pylint: disable=relative-beyond-top-level
+from .common import TornadoRequestHandlerBase
 from .upload import process_pending_logs_for_user
 
 ADMIN_TEMPLATE = 'admin_users.html'
@@ -44,13 +45,15 @@ class AdminUsersHandler(TornadoRequestHandlerBase):
 
     @tornado.web.authenticated
     def get(self):
+        """Render the admin users management page."""
         if not _require_admin(self):
             return
 
         con = sqlite3.connect(get_db_filename())
         cur = con.cursor()
         cur.execute(
-            "SELECT Username, Email, Approved, IsAdmin FROM Users ORDER BY Username"
+            "SELECT Username, Email, Approved, IsAdmin "
+            "FROM Users ORDER BY Username"
         )
         rows = cur.fetchall()
         con.close()
@@ -71,6 +74,7 @@ class AdminUsersAPIHandler(TornadoRequestHandlerBase):
     """JSON API for admin user management actions (approve / delete)"""
 
     def write_error(self, status_code, **kwargs):
+        """Return JSON error payloads for API failures."""
         self.set_header('Content-Type', 'application/json')
         error_msg = "Unknown error"
         if "exc_info" in kwargs:
@@ -79,6 +83,7 @@ class AdminUsersAPIHandler(TornadoRequestHandlerBase):
 
     @tornado.web.authenticated
     def post(self):
+        """Approve or delete a user account."""
         if not _require_admin(self):
             return
 
@@ -91,7 +96,8 @@ class AdminUsersAPIHandler(TornadoRequestHandlerBase):
             # Prevent self-deletion
             if action == "delete" and username == self.current_user:
                 self.set_status(400)
-                self.write(json.dumps({"error": "Cannot delete your own account"}))
+                self.write(json.dumps({
+                    "error": "Cannot delete your own account"}))
                 return
 
             con = sqlite3.connect(get_db_filename())
@@ -110,12 +116,16 @@ class AdminUsersAPIHandler(TornadoRequestHandlerBase):
                 # Parse any logs the user uploaded while pending approval
                 IOLoop.current().run_in_executor(
                     None, process_pending_logs_for_user, username)
-                self.write(json.dumps({"success": True, "message": f"User '{username}' approved"}))
+                self.write(json.dumps({
+                    "success": True,
+                    "message": f"User '{username}' approved"}))
 
             elif action == "delete":
                 cur.execute("DELETE FROM Users WHERE Username=?", (username,))
                 con.commit()
-                self.write(json.dumps({"success": True, "message": f"User '{username}' deleted"}))
+                self.write(json.dumps({
+                    "success": True,
+                    "message": f"User '{username}' deleted"}))
 
             else:
                 self.set_status(400)

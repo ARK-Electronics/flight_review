@@ -11,6 +11,7 @@ from plotting import *
 from plotted_tables import get_heading_html
 
 #pylint: disable=cell-var-from-loop, undefined-loop-variable,
+#pylint: disable=invalid-name
 
 def get_pid_analysis_plots(ulog, px4_ulog, db_data, link_to_main_plots):
     """

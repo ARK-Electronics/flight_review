@@ -26,7 +26,9 @@ from .compat_ulog import CompatDataset, CompatULog
 def _load_csv(path: str) -> Dict[str, np.ndarray]:
     import pandas as pd
 
-    df = pd.read_csv(path)
+    # low_memory=False avoids DtypeWarning on mixed-type columns common in
+    # Blackbox Explorer exports (e.g. mode flags as int/str in later rows).
+    df = pd.read_csv(path, low_memory=False)
     data: Dict[str, np.ndarray] = {c: df[c].to_numpy() for c in df.columns}
     return data
 

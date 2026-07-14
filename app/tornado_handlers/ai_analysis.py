@@ -23,7 +23,8 @@ from helper import validate_log_id, get_log_filename, load_log_file, \
 from pyulog.px4 import PX4ULog
 
 #pylint: disable=relative-beyond-top-level
-from .common import get_jinja_env, CustomHTTPError, TornadoRequestHandlerBase
+#pylint: disable=invalid-name,line-too-long
+from .common import get_jinja_env, TornadoRequestHandlerBase
 
 AI_ANALYSIS_TEMPLATE = 'ai_analysis.html'
 
@@ -42,7 +43,7 @@ def _load_cached_analysis(log_id):
     cache_path = _get_cache_path(log_id)
     if os.path.exists(cache_path):
         try:
-            with open(cache_path, 'r') as f:
+            with open(cache_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             return None
@@ -53,7 +54,7 @@ def _save_cached_analysis(log_id, data):
     """Save analysis result to cache."""
     cache_path = _get_cache_path(log_id)
     try:
-        with open(cache_path, 'w') as f:
+        with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(data, f)
     except OSError:
         pass

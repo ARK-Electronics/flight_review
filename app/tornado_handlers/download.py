@@ -30,6 +30,7 @@ class DownloadHandler(TornadoRequestHandlerBase):
     """
     @tornado.web.authenticated
     def get(self):
+        """Handle authenticated log download requests."""
         log_id = self.get_argument('log')
         log_file_name = get_log_filename(log_id)
         download_type = self.get_argument('type', default='0')

@@ -22,6 +22,7 @@ from vtol_tailsitter import *
 
 #pylint: disable=cell-var-from-loop, undefined-loop-variable,
 #pylint: disable=consider-using-enumerate,too-many-statements
+#pylint: disable=too-many-lines,line-too-long
 
 
 
@@ -1084,59 +1085,59 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
         # Check available fields and plot them
         if 'buffer_used_bytes' in data_plot.dataset.data and 'buffer_size_bytes' in data_plot.dataset.data:
             data_plot.add_graph(
-                [lambda data: ('buffer_usage_percent', 
+                [lambda data: ('buffer_usage_percent',
                               data['buffer_used_bytes'] / np.maximum(data['buffer_size_bytes'], 1) * 100)],
                 colors8[0:1], ['Buffer Usage [%]'])
-        
+
         if 'write_rate_kb_s' in data_plot.dataset.data:
             data_plot.add_graph(['write_rate_kb_s'], colors8[1:2], ['Write Rate [KB/s]'])
-        
+
         if 'num_messages' in data_plot.dataset.data:
             data_plot.add_graph(['num_messages'], colors8[2:3], ['Messages in Buffer'])
-        
+
         if 'dropouts' in data_plot.dataset.data:
             data_plot.add_graph(['dropouts'], colors8[3:4], ['Dropout Count'])
-        
+
         # Mark dropouts from ulog on the plot
         plot_dropouts(data_plot.bokeh_plot, ulog.dropouts, 0)
         plot_flight_modes_background(data_plot, flight_mode_changes, vtol_states)
-        
+
         if data_plot.finalize() is not None: plots.append(data_plot)
-    
+
     # SD logging buffer analysis with warnings
     try:
         logger_status_dataset = ulog.get_dataset('logger_status')
         if logger_status_dataset is not None:
             logger_data = logger_status_dataset.data
-            
+
             # Analyze buffer usage
             if 'buffer_used_bytes' in logger_data and 'buffer_size_bytes' in logger_data:
                 buffer_usage = logger_data['buffer_used_bytes'] / np.maximum(logger_data['buffer_size_bytes'], 1)
                 max_buffer_usage = np.max(buffer_usage) * 100
-                
+
                 # Analyze write failures if available
                 write_failures = 0
                 if 'write_failures' in logger_data:
                     write_failures = np.sum(np.diff(logger_data['write_failures']) > 0)
-                
+
                 # Create analysis plot showing buffer details
                 data_plot = DataPlot(data, plot_config, 'logger_status',
                                    title='SD Logging Buffer Details',
                                    plot_height='small', y_start=0,
                                    changed_params=changed_params, x_range=x_range)
-                
+
                 if 'buffer_used_bytes' in logger_data:
                     data_plot.add_graph(
                         [lambda data: ('buffer_used_kb', data['buffer_used_bytes'] / 1024)],
                         colors8[0:1], ['Buffer Used [KB]'])
-                
+
                 if 'buffer_size_bytes' in logger_data:
                     # Add max buffer size as a reference line
                     max_buffer_kb = np.max(logger_data['buffer_size_bytes']) / 1024
                     data_plot.add_graph(
                         [lambda data: ('buffer_size_kb', data['buffer_size_bytes'] / 1024)],
                         colors8[1:2], ['Buffer Size [KB]'])
-                
+
                 plot_flight_modes_background(data_plot, flight_mode_changes, vtol_states)
                 if data_plot.finalize() is not None: plots.append(data_plot)
     except (KeyError, IndexError, ValueError):

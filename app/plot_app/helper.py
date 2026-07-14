@@ -28,6 +28,7 @@ from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Hash import SHA256
 
 #pylint: disable=line-too-long, global-variable-not-assigned,invalid-name,global-statement
+#pylint: disable=import-outside-toplevel
 
 def print_timing(name, start_time):
     """ for debugging: print elapsed time, with start_time = timer(). """

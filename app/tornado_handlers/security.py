@@ -8,6 +8,7 @@ This is a defense-in-depth layer. Anything externally exposed (reverse
 proxy rate limits, WAF, mandatory sandboxing) should still be configured
 separately at the infrastructure level.
 """
+#pylint: disable=global-statement,invalid-name,import-outside-toplevel,missing-function-docstring
 
 from __future__ import annotations
 

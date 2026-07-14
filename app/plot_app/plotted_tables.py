@@ -183,18 +183,20 @@ SDLOG_UTC_OFFSET: {}'''.format(utctimestamp.strftime('%d-%m-%Y %H:%M'), utc_offs
             total_duration_str = '{:.2f}'.format(total_duration)
         table_text_left.append(('Dropouts', '{:} ({:} s)'.format(
             len(dropout_durations), total_duration_str)))
-    
+
     # SD logging analysis
     try:
         logger_status = ulog.get_dataset('logger_status')
         if logger_status is not None:
             logger_data = logger_status.data
-            
+
             # Calculate max buffer usage
             if 'buffer_used_bytes' in logger_data and 'buffer_size_bytes' in logger_data:
-                buffer_usage = logger_data['buffer_used_bytes'] / np.maximum(logger_data['buffer_size_bytes'], 1)
+                buffer_usage = (
+                    logger_data['buffer_used_bytes'] /
+                    np.maximum(logger_data['buffer_size_bytes'], 1))
                 max_buffer_usage = np.max(buffer_usage) * 100
-                
+
                 # Color code based on severity
                 if max_buffer_usage > 90:
                     buffer_color = 'red'
@@ -202,22 +204,26 @@ SDLOG_UTC_OFFSET: {}'''.format(utctimestamp.strftime('%d-%m-%Y %H:%M'), utc_offs
                     buffer_color = 'orange'
                 else:
                     buffer_color = 'green'
-                
-                table_text_left.append(('Max SD Buffer Usage', 
-                    '<span style="color:{:}">{:.1f}%</span>'.format(buffer_color, max_buffer_usage)))
-            
+
+                table_text_left.append((
+                    'Max SD Buffer Usage',
+                    '<span style="color:{:}">{:.1f}%</span>'.format(
+                        buffer_color, max_buffer_usage)))
+
             # Calculate average write rate
             if 'write_rate_kb_s' in logger_data:
                 avg_write_rate = np.mean(logger_data['write_rate_kb_s'])
                 max_write_rate = np.max(logger_data['write_rate_kb_s'])
-                table_text_left.append(('SD Write Rate', 
-                    'Avg: {:.1f} KB/s, Max: {:.1f} KB/s'.format(avg_write_rate, max_write_rate)))
-            
+                table_text_left.append((
+                    'SD Write Rate',
+                    'Avg: {:.1f} KB/s, Max: {:.1f} KB/s'.format(
+                        avg_write_rate, max_write_rate)))
+
             # Check for write failures
             if 'write_failures' in logger_data:
                 total_write_failures = int(np.max(logger_data['write_failures']))
                 if total_write_failures > 0:
-                    table_text_left.append(('SD Write Failures', 
+                    table_text_left.append(('SD Write Failures',
                         '<span style="color:red">{:}</span>'.format(total_write_failures)))
     except (KeyError, IndexError, ValueError):
         pass

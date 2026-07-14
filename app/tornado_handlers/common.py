@@ -15,7 +15,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../pl
 from db_entry import DBDataGenerated
 from config import get_db_connection, get_db_filename
 
-#pylint: disable=abstract-method
+#pylint: disable=abstract-method,relative-beyond-top-level,import-outside-toplevel
 
 _ENV = Environment(loader=FileSystemLoader(
     os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app/templates')))
@@ -50,6 +50,7 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
         return None
 
     def render_jinja(self, template_name, **kwargs):
+        """Render a Jinja template and write the result."""
         template = get_jinja_env().get_template(template_name)
         kwargs['current_user'] = self.get_current_user()
         # Auto-inject is_admin for navbar rendering

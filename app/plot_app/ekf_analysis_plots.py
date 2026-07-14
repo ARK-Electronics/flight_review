@@ -582,7 +582,9 @@ estimation problems that may need parameter tuning.
                         if field_name in esf_data and np.amax(esf_data[field_name]) > 0.1:
                             cur_data = esf_data[field_name]
                             data_label = 'flag_' + str(len(plot_data))
-                            plot_data.append(lambda d, data=cur_data, label=data_label: (label, data))
+                            plot_data.append(
+                                lambda d, data=cur_data, label=data_label:
+                                (label, data))
                             plot_labels.append(cur_label)
                             if len(plot_data) >= 8:
                                 break
@@ -841,23 +843,30 @@ estimation problems that may need parameter tuning.
                 pct_flags = 100.0 * total_flags / len(es_data['innovation_check_flags'])
                 color = '#d55e00' if pct_flags > 10 else (
                     '#e69f00' if pct_flags > 1 else '#009e73')
-                div_text += (f"<li><span style='color:{color}'><b>Innovation Rejections:</b></span> "
-                             f"{pct_flags:.1f}% of samples had at least one flag set</li>")
+                div_text += (
+                    f"<li><span style='color:{color}'>"
+                    f"<b>Innovation Rejections:</b></span> "
+                    f"{pct_flags:.1f}% of samples had at least one "
+                    f"flag set</li>")
             else:
                 esf = _safe_get_dataset(ulog, 'estimator_status_flags')
                 if esf is not None:
                     esf_data = esf.data
-                    reject_fields = [f for f in esf_data.keys() if f.startswith('reject_')]
+                    reject_fields = [
+                        f for f in esf_data.keys()
+                        if f.startswith('reject_')]
                     if reject_fields:
                         # Combine all reject flags into one metric
-                        any_reject = np.zeros(len(esf_data['timestamp']), dtype=bool)
+                        any_reject = np.zeros(
+                            len(esf_data['timestamp']), dtype=bool)
                         active_rejects = []
                         for field in reject_fields:
                             mask = esf_data[field] >= 1
                             if np.any(mask):
                                 pct = 100.0 * np.sum(mask) / len(mask)
-                                active_rejects.append(
-                                    (field.replace('reject_', ''), pct))
+                                field_name = str(field).replace(
+                                    'reject_', '')
+                                active_rejects.append((field_name, pct))
                             any_reject |= mask
                         pct_any = 100.0 * np.sum(any_reject) / len(any_reject)
                         color = '#d55e00' if pct_any > 10 else (

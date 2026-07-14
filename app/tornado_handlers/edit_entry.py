@@ -18,6 +18,7 @@ from .common import get_jinja_env, TornadoRequestHandlerBase
 EDIT_TEMPLATE = 'edit.html'
 
 #pylint: disable=abstract-method
+#pylint: disable=too-many-return-statements
 
 
 class EditEntryHandler(TornadoRequestHandlerBase):
