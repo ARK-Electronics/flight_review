@@ -117,7 +117,8 @@ Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
 <form method=\"post\" action=\"{form_action}\" class=\"mt-3\">
   <div class=\"mb-3\">
     <label for=\"description\" class=\"form-label\">Flight notes</label>
-    <textarea class=\"form-control\" id=\"description\" name=\"description\" rows=\"6\" maxlength=\"5000\">{escape(current_description)}</textarea>
+    <textarea class=\"form-control\" id=\"description\" name=\"description\"
+      rows=\"6\" maxlength=\"5000\">{escape(current_description)}</textarea>
     <div class=\"form-text\">Up to 5000 characters.</div>
   </div>
   <button type=\"submit\" class=\"btn btn-primary\">Save</button>
