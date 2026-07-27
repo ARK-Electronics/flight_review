@@ -24,7 +24,7 @@ import tornado.web
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)),
                              '../plot_app'))
-from config import get_db_filename
+from config import get_db_filename, get_domain_name, get_http_protocol
 
 #pylint: disable=relative-beyond-top-level
 from .common import TornadoRequestHandlerBase
@@ -234,9 +234,7 @@ class AccountHandler(TornadoRequestHandlerBase):
             except (OverflowError, ValueError, OSError):
                 created_str = ''
 
-        domain = ''
         try:
-            from config import get_domain_name, get_http_protocol
             domain = get_domain_name() or ''
             protocol = get_http_protocol() or 'https'
             base_url = f'{protocol}://{domain}' if domain else ''

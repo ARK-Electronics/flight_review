@@ -227,7 +227,9 @@ class UploadHandler(TornadoRequestHandlerBase):
             #
             # Machine clients (logloader) authenticate with a per-account API
             # key via Authorization / X-API-Key / ?api_key= (see api_key.py).
-            username = self.current_user
+            # Use get_current_user() (not the property) so pylint does not treat
+            # a later current_user assignment as a prior-definition conflict.
+            username = self.get_current_user()
             if not username:
                 api_user = authenticate_request_api_key(self)
                 if api_user:
