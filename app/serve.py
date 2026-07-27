@@ -30,6 +30,7 @@ from tornado_handlers.error_labels import UpdateErrorLabelHandler
 from tornado_handlers.auth import (
     LoginHandler, LogoutHandler, RegisterHandler, ApproveUserHandler,
     ForgotPasswordHandler, ResetPasswordHandler)
+from tornado_handlers.api_key import AccountHandler
 from tornado_handlers.admin import AdminUsersHandler, AdminUsersAPIHandler
 from tornado_handlers.ai_analysis import AIAnalysisHandler, AIAnalysisAPIHandler, \
     AIAnalysisModelsHandler
@@ -156,6 +157,7 @@ extra_patterns = [
     (r'/approve_user', ApproveUserHandler),
     (r'/forgot_password', ForgotPasswordHandler),
     (r'/reset_password', ResetPasswordHandler),
+    (r'/account', AccountHandler),
     (r'/admin', AdminUsersHandler),
     (r'/admin/api', AdminUsersAPIHandler),
     (r'/ai_analysis', AIAnalysisHandler),

@@ -181,6 +181,12 @@ with con:
                 "Email TEXT, "
                 "Approved INTEGER DEFAULT 0, "
                 "IsAdmin INTEGER DEFAULT 0, "
+                "AccountToken TEXT DEFAULT '', "
+                "ResetToken TEXT DEFAULT '', "
+                "ResetTokenExpiration REAL DEFAULT 0, "
+                "ApiKeyHash TEXT DEFAULT '', "  # SHA-256 of API key (empty if none)
+                "ApiKeyPrefix TEXT DEFAULT '', "  # short prefix shown in UI
+                "ApiKeyCreated REAL DEFAULT 0, "  # unix time when key was generated
                 "CONSTRAINT Username_PK PRIMARY KEY (Username))")
     else:
         # Check for Approved column
@@ -200,6 +206,20 @@ with con:
         if 'ResetTokenExpiration' not in column_names:
             print('Adding column ResetTokenExpiration to Users')
             cur.execute("ALTER TABLE Users ADD COLUMN ResetTokenExpiration REAL DEFAULT 0")
+        if 'ApiKeyHash' not in column_names:
+            print('Adding column ApiKeyHash to Users')
+            cur.execute("ALTER TABLE Users ADD COLUMN ApiKeyHash TEXT DEFAULT ''")
+        if 'ApiKeyPrefix' not in column_names:
+            print('Adding column ApiKeyPrefix to Users')
+            cur.execute("ALTER TABLE Users ADD COLUMN ApiKeyPrefix TEXT DEFAULT ''")
+        if 'ApiKeyCreated' not in column_names:
+            print('Adding column ApiKeyCreated to Users')
+            cur.execute("ALTER TABLE Users ADD COLUMN ApiKeyCreated REAL DEFAULT 0")
+
+    # Unique index for API key lookup (partial: only rows with a key)
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_key_hash "
+        "ON Users(ApiKeyHash) WHERE ApiKeyHash != ''")
 
 con.close()
 

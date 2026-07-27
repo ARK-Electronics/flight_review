@@ -1,0 +1,143 @@
+{% include "header.html" %}
+
+<div class="container" style="margin-top: 50px; margin-bottom: 50px;">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="mb-0">Account</h2>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-4">
+                        Signed in as <strong>{{ current_user }}</strong>
+                    </p>
+
+                    {% if error %}
+                    <div class="alert alert-danger">{{ error }}</div>
+                    {% endif %}
+                    {% if message %}
+                    <div class="alert alert-success">{{ message }}</div>
+                    {% endif %}
+
+                    <h4 class="mb-3">Upload API Key</h4>
+                    <p>
+                        Generate an API key for machine clients such as
+                        <strong>logloader</strong> / QGroundControl. The key is
+                        tied to your approved account; uploads made with it are
+                        attributed to you.
+                    </p>
+
+                    {% if not account_approved %}
+                    <div class="alert alert-warning">
+                        Your account is pending approval. You can generate an
+                        API key after an administrator approves your account.
+                    </div>
+                    {% else %}
+
+                    {% if new_key %}
+                    <div class="alert alert-warning">
+                        <strong>Copy your new API key now.</strong>
+                        It will not be shown again.
+                        <div class="input-group mt-2">
+                            <input type="text" class="form-control font-monospace"
+                                   id="new-api-key" value="{{ new_key }}" readonly>
+                            <button class="btn btn-outline-secondary" type="button"
+                                    onclick="copyApiKey()">Copy</button>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if has_api_key %}
+                    <div class="mb-3">
+                        <div><strong>Status:</strong>
+                            <span class="badge bg-success">Active</span>
+                        </div>
+                        <div class="mt-1">
+                            <strong>Key prefix:</strong>
+                            <code>{{ api_key_prefix }}…</code>
+                        </div>
+                        {% if api_key_created %}
+                        <div class="mt-1 text-muted">
+                            Created: {{ api_key_created }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <div class="mb-3">
+                        <strong>Status:</strong>
+                        <span class="badge bg-secondary">No key</span>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-flex flex-wrap gap-2 mb-4">
+                        <form method="post" action="/account"
+                              onsubmit="return confirmGenerate();">
+                            <input type="hidden" name="action" value="generate">
+                            <button type="submit" class="btn btn-primary">
+                                {% if has_api_key %}Regenerate API key{% else %}Generate API key{% endif %}
+                            </button>
+                        </form>
+                        {% if has_api_key %}
+                        <form method="post" action="/account"
+                              onsubmit="return confirm('Revoke this API key? Clients using it will stop working.');">
+                            <input type="hidden" name="action" value="revoke">
+                            <button type="submit" class="btn btn-outline-danger">
+                                Revoke key
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+
+                    <h5 class="mb-2">Using the key with logloader</h5>
+                    <p class="small text-muted">
+                        Pass the key as a query parameter on the upload URL
+                        (works with clients that cannot set custom headers), or
+                        send it as a header.
+                    </p>
+                    <pre class="bg-light border rounded p-3 small"><code>{% if base_url %}{{ base_url }}{% else %}https://YOUR_HOST{% endif %}/upload?api_key=YOUR_API_KEY</code></pre>
+                    <p class="small text-muted mb-1">Or with headers:</p>
+                    <pre class="bg-light border rounded p-3 small"><code>Authorization: Bearer YOUR_API_KEY
+# or
+X-API-Key: YOUR_API_KEY</code></pre>
+                    <p class="small text-muted mb-0">
+                        Example with <code>curl</code>:
+                    </p>
+                    <pre class="bg-light border rounded p-3 small mb-0"><code>curl -X POST "{% if base_url %}{{ base_url }}{% else %}https://YOUR_HOST{% endif %}/upload?api_key=YOUR_API_KEY" \
+  -F "filearg=@flight.ulg" \
+  -F "email=logs@arkelectron.com" \
+  -F "description=logloader" \
+  -F "source=QGroundControl" \
+  -F "type=personal" \
+  -F "redirect=false"</code></pre>
+
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyApiKey() {
+    var el = document.getElementById('new-api-key');
+    if (!el) return;
+    el.select();
+    el.setSelectionRange(0, 99999);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(el.value);
+    } else {
+        document.execCommand('copy');
+    }
+}
+function confirmGenerate() {
+    {% if has_api_key %}
+    return confirm('Regenerating will invalidate the existing key. Continue?');
+    {% else %}
+    return true;
+    {% endif %}
+}
+</script>
+
+{% include "footer.html" %}
+</body>
+</html>

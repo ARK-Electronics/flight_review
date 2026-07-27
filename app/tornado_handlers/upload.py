@@ -44,6 +44,7 @@ from .security import (
     parse_log_bounded, ParserTimeout, ParserCrashed,
     get_rate_limiter, client_ip,
 )
+from .api_key import authenticate_request_api_key
 
 
 UPLOAD_TEMPLATE = 'upload.html'
@@ -223,13 +224,27 @@ class UploadHandler(TornadoRequestHandlerBase):
             # before the request body is streamed, so anonymous clients don't
             # transfer the whole file just to be turned away. The approval
             # re-check covers accounts revoked after their login cookie was set.
+            #
+            # Machine clients (logloader) authenticate with a per-account API
+            # key via Authorization / X-API-Key / ?api_key= (see api_key.py).
             username = self.current_user
+            if not username:
+                api_user = authenticate_request_api_key(self)
+                if api_user:
+                    # Bind the request to the key's owner for the rest of the
+                    # handler (Uploader column, approval checks, logging).
+                    self.current_user = api_user
+                    username = api_user
+                    _upload_log.info('api_key_auth ip=%s uploader=%s',
+                                     client_ip(self), username)
+
             if not username or not _is_uploader_approved(username):
                 _upload_log.warning('rejected_unauthenticated ip=%s uploader=%s',
                                     client_ip(self), username or '-')
                 raise CustomHTTPError(
-                    403, 'Uploading requires a registered, approved account. '
-                         'Please log in and try again.')
+                    403, 'Uploading requires a registered, approved account '
+                         '(login session or API key). '
+                         'Please log in or provide a valid API key.')
 
             try:
                 total = int(self.request.headers.get("Content-Length", "0"))
