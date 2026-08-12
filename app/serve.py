@@ -33,7 +33,7 @@ from tornado_handlers.auth import (
 from tornado_handlers.api_key import AccountHandler
 from tornado_handlers.admin import AdminUsersHandler, AdminUsersAPIHandler
 from tornado_handlers.ai_analysis import AIAnalysisHandler, AIAnalysisAPIHandler, \
-    AIAnalysisModelsHandler
+    AIAnalysisModelsHandler, PIDAIAnalysisAPIHandler
 
 from helper import set_log_id_is_filename, print_cache_info #pylint: disable=C0411
 from config import debug_print_timing, get_overview_img_filepath, get_domain_name #pylint: disable=C0411
@@ -162,6 +162,7 @@ extra_patterns = [
     (r'/admin/api', AdminUsersAPIHandler),
     (r'/ai_analysis', AIAnalysisHandler),
     (r'/ai_analysis/api', AIAnalysisAPIHandler),
+    (r'/ai_analysis/pid', PIDAIAnalysisAPIHandler),
     (r'/ai_analysis/models', AIAnalysisModelsHandler),
     (r"/stats", RedirectHandler, {"url": "/plot_app?stats=1"}),
     (r'/overview_img/(.*)', StaticFileHandler, {'path': get_overview_img_filepath()}),

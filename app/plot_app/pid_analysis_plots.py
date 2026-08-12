@@ -13,7 +13,8 @@ from plotted_tables import get_heading_html
 #pylint: disable=cell-var-from-loop, undefined-loop-variable,
 #pylint: disable=invalid-name
 
-def get_pid_analysis_plots(ulog, px4_ulog, db_data, link_to_main_plots):
+def get_pid_analysis_plots(ulog, px4_ulog, db_data, link_to_main_plots,
+                           extra_links=None):
     """
     get all bokeh plots shown on the PID analysis page
     :return: list of bokeh plots
@@ -59,8 +60,11 @@ href="https://github.com/Plasmatree/PID-Analyzer/wiki/Influence-of-parameters">h
 The analysis may take a while...
 </p>
     """
+    heading_links = [('Open Main Plots', link_to_main_plots)]
+    if extra_links:
+        heading_links.extend(extra_links)
     curdoc().template_variables['title_html'] = get_heading_html(
-        ulog, px4_ulog, db_data, None, [('Open Main Plots', link_to_main_plots)],
+        ulog, px4_ulog, db_data, None, heading_links,
         'PID Analysis') + page_intro
 
     plots = []

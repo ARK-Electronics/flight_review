@@ -285,10 +285,18 @@ else:
         if plots_page == 'pid_analysis':
             try:
                 link_to_main_plots = '?log='+log_id
+                extra_links = [('AI Analysis', 'ai_analysis?log='+log_id)]
                 plots = get_pid_analysis_plots(ulog, px4_ulog, db_data,
-                                               link_to_main_plots)
+                                               link_to_main_plots,
+                                               extra_links=extra_links)
 
-                title = 'Flight Review - '+px4_ulog.get_mav_type()
+                title = 'Flight Review - PID Analysis - '+px4_ulog.get_mav_type()
+                api_key = get_xai_api_key()
+                curdoc().template_variables['is_pid_analysis_page'] = True
+                curdoc().template_variables['log_id'] = log_id
+                curdoc().template_variables['has_xai_api_key'] = bool(
+                    api_key and api_key.strip())
+                curdoc().template_variables['default_model'] = 'grok-4.6'
 
             except Exception as error:
                 # catch all errors to avoid showing a blank page. Note that if we

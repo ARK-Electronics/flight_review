@@ -1,0 +1,176 @@
+{# PID-page AI tuning panel. Included from index.html when is_pid_analysis_page. #}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<div id="pid-ai-panel" class="pid-ai-panel">
+    <div class="pid-ai-header">
+        <h4>
+            <i class="fa-solid fa-brain" style="color: #e94560;"></i>
+            AI PID Tuning Suggestions
+        </h4>
+        <p class="pid-ai-lead">
+            Analyze the step-response curves on this page and recommend PX4 rate/attitude
+            gain changes. Uses the newest Grok model by default.
+        </p>
+    </div>
+
+    {% if not has_xai_api_key %}
+    <div class="pid-ai-empty">
+        <i class="fa-solid fa-key"></i>
+        <p>Configure an xAI API key to enable AI PID tuning analysis.</p>
+        <p class="text-muted">Set <code>xai_api_key</code> under <code>[ai_analysis]</code>
+           in <code>config_user.ini</code>, or the <code>XAI_API_KEY</code> environment variable.</p>
+    </div>
+    {% else %}
+    <div class="pid-ai-controls d-flex align-items-center flex-wrap gap-2">
+        <label for="pid-ai-model-select" class="form-label mb-0">
+            <i class="fa-solid fa-microchip"></i> Model:
+        </label>
+        <select id="pid-ai-model-select" class="form-select form-select-sm"
+                style="width:auto; min-width:220px;">
+            <option value="{{ default_model }}">{{ default_model }}</option>
+        </select>
+        <button id="pid-ai-run-btn" class="btn btn-primary btn-sm" type="button">
+            <i class="fa-solid fa-play"></i> Analyze Step Responses
+        </button>
+        <button id="pid-ai-rerun-btn" class="btn btn-outline-secondary btn-sm d-none" type="button">
+            <i class="fa-solid fa-rotate"></i> Re-run
+        </button>
+    </div>
+
+    <div id="pid-ai-output" class="pid-ai-output">
+        <div class="pid-ai-placeholder">
+            Click <b>Analyze Step Responses</b> to send the reconstructed step-response
+            curves and current PID parameters to Grok for tuning recommendations.
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if has_xai_api_key %}
+<script>
+(function () {
+    const LOG_ID = "{{ log_id }}";
+    const DEFAULT_MODEL = "{{ default_model }}";
+    const output = document.getElementById('pid-ai-output');
+    const runBtn = document.getElementById('pid-ai-run-btn');
+    const rerunBtn = document.getElementById('pid-ai-rerun-btn');
+    const modelSelect = document.getElementById('pid-ai-model-select');
+
+    function setBusy(busy) {
+        if (runBtn) runBtn.disabled = busy;
+        if (rerunBtn) rerunBtn.disabled = busy;
+    }
+
+    function showLoading() {
+        setBusy(true);
+        if (runBtn) runBtn.classList.add('d-none');
+        if (rerunBtn) rerunBtn.classList.add('d-none');
+        output.innerHTML = `
+            <div class="pid-ai-loading">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div>Computing step-response metrics and asking Grok for tuning advice.
+                    This can take 30–90 seconds.</div>
+            </div>`;
+    }
+
+    function showError(message) {
+        output.innerHTML = `
+            <div class="pid-ai-error">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <strong>Analysis failed.</strong>
+                <div>${message}</div>
+            </div>`;
+        if (rerunBtn) rerunBtn.classList.remove('d-none');
+        setBusy(false);
+    }
+
+    function renderAnalysis(data) {
+        let html = '';
+        if (data.data_summary) {
+            const ds = data.data_summary;
+            html += '<div class="pid-ai-summary">';
+            if (ds.mav_type) html += `<span>${ds.mav_type}</span>`;
+            if (typeof ds.num_step_responses === 'number') {
+                html += `<span>${ds.num_step_responses} step responses</span>`;
+            }
+            if (ds.has_rate) html += '<span>Rate loop</span>';
+            if (ds.has_attitude) html += '<span>Attitude loop</span>';
+            if (data.model) html += `<span class="pid-ai-model">${data.model}</span>`;
+            if (data.cached) html += '<span class="pid-ai-cached">Cached</span>';
+            html += '</div>';
+        }
+        if (data.analysis && typeof marked !== 'undefined') {
+            html += '<div class="pid-ai-markdown">' + marked.parse(data.analysis) + '</div>';
+        } else if (data.analysis) {
+            html += '<pre class="pid-ai-markdown">' + data.analysis + '</pre>';
+        }
+        output.innerHTML = html;
+        if (runBtn) runBtn.classList.add('d-none');
+        if (rerunBtn) rerunBtn.classList.remove('d-none');
+        setBusy(false);
+    }
+
+    function runAnalysis() {
+        showLoading();
+        fetch('/ai_analysis/pid?log=' + encodeURIComponent(LOG_ID), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: modelSelect ? modelSelect.value : DEFAULT_MODEL }),
+        })
+        .then(response => response.json().then(body => ({status: response.status, body})))
+        .then(({status, body}) => {
+            if (status === 200) {
+                renderAnalysis(body);
+            } else {
+                showError((body && body.error) || 'Unknown error');
+            }
+        })
+        .catch(err => showError(err.message || String(err)));
+    }
+
+    if (runBtn) runBtn.addEventListener('click', runAnalysis);
+    if (rerunBtn) rerunBtn.addEventListener('click', runAnalysis);
+
+    fetch('/ai_analysis/models', { method: 'GET' })
+        .then(response => response.json())
+        .then(data => {
+            if (!modelSelect || !data || !Array.isArray(data.models) || data.models.length === 0) {
+                return;
+            }
+            const preferred = data.default || DEFAULT_MODEL;
+            modelSelect.innerHTML = '';
+            let found = false;
+            data.models.forEach(mid => {
+                const opt = document.createElement('option');
+                opt.value = mid;
+                opt.textContent = mid;
+                if (mid === preferred) {
+                    opt.selected = true;
+                    found = true;
+                }
+                modelSelect.appendChild(opt);
+            });
+            if (!found && preferred) {
+                const opt = document.createElement('option');
+                opt.value = preferred;
+                opt.textContent = preferred;
+                opt.selected = true;
+                modelSelect.insertBefore(opt, modelSelect.firstChild);
+            }
+            modelSelect.value = preferred;
+        })
+        .catch(() => {});
+
+    fetch('/ai_analysis/pid?log=' + encodeURIComponent(LOG_ID), { method: 'GET' })
+        .then(response => response.json())
+        .then(data => {
+            if (data && data.cached) {
+                renderAnalysis(data);
+            }
+        })
+        .catch(() => {});
+})();
+</script>
+{% endif %}

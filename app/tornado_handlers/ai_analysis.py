@@ -6,12 +6,14 @@ and sends to Grok for failure analysis and tuning recommendations.
 from __future__ import print_function
 import json
 import os
+import re
 import sys
 import traceback
 
 import numpy as np
 import tornado.web
 import tornado.gen
+import tornado.ioloop
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
 # this is needed for the following imports
@@ -19,6 +21,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../pl
 from config import get_xai_api_key, get_xai_model, get_cache_filepath
 from helper import validate_log_id, get_log_filename, load_log_file, \
     get_flight_mode_changes, flight_modes_table
+from pid_step_data import collect_pid_step_responses
 
 from pyulog.px4 import PX4ULog
 
@@ -28,19 +31,94 @@ from .common import get_jinja_env, TornadoRequestHandlerBase
 
 AI_ANALYSIS_TEMPLATE = 'ai_analysis.html'
 
+# Newest known flagship; used when the live model list is empty or unreachable.
+_FALLBACK_GROK_MODEL = 'grok-4.6'
+
 # AI analysis cache directory
 _AI_CACHE_DIR = os.path.join(get_cache_filepath(), 'ai_analysis')
 os.makedirs(_AI_CACHE_DIR, exist_ok=True)
 
 
-def _get_cache_path(log_id):
+def _sanitize_model_id(candidate, fallback=None):
+    """Return a safe model id, or fallback / configured default."""
+    if fallback is None:
+        fallback = get_xai_model() or _FALLBACK_GROK_MODEL
+    if not candidate:
+        return fallback
+    candidate = str(candidate).strip()
+    if candidate and all(c.isalnum() or c in '-_.:' for c in candidate):
+        return candidate
+    return fallback
+
+
+def _grok_model_sort_key(model_id):
+    """Sort key for Grok model ids. Higher tuple = newer / more preferred.
+
+    Flagship aliases (grok-4.6, grok-4-latest) outrank dated or specialized
+    variants of the same version (grok-4.20-0309-reasoning, grok-4-fast).
+    """
+    mid = (model_id or '').lower().strip()
+    match = re.match(r'^grok-(\d+)(?:\.(\d+))?(-.*)?$', mid)
+    if not match:
+        return (0, 0, 0, mid)
+    major = int(match.group(1))
+    minor = int(match.group(2) or 0)
+    suffix = match.group(3) or ''
+    # Prefer -latest (tracks newest) over a pinned flagship of the same version.
+    if suffix == '-latest':
+        rank = 4
+    elif suffix == '':
+        rank = 3
+    elif suffix.endswith('-latest'):
+        rank = 2
+    else:
+        rank = 1
+    # Shorter names win ties (grok-4-fast over grok-4-fast-reasoning).
+    return (major, minor, rank, -len(mid), mid)
+
+
+def pick_newest_grok_model(model_ids, fallback=None):
+    """Pick the newest flagship Grok chat model from a list of ids."""
+    if fallback is None:
+        fallback = get_xai_model() or _FALLBACK_GROK_MODEL
+    if not model_ids:
+        return fallback
+
+    grok_ids = []
+    for mid in model_ids:
+        if not isinstance(mid, str):
+            continue
+        lower = mid.lower()
+        if not lower.startswith('grok-'):
+            continue
+        if any(skip in lower for skip in (
+                'imagine', 'voice', 'tts', 'image', 'video', 'grok-build')):
+            continue
+        grok_ids.append(mid)
+
+    if not grok_ids:
+        return fallback
+
+    flagships = [mid for mid in grok_ids
+                 if re.match(r'^grok-\d+(\.\d+)?(-latest)?$', mid, re.I)]
+    pool = flagships or grok_ids
+    return max(pool, key=_grok_model_sort_key)
+
+
+def _default_analysis_model(model_ids=None):
+    """Always default to the newest Grok model, with a configured fallback."""
+    return pick_newest_grok_model(model_ids, fallback=_FALLBACK_GROK_MODEL)
+
+
+def _get_cache_path(log_id, kind='full'):
     """Get the cache file path for a given log ID."""
-    return os.path.join(_AI_CACHE_DIR, f'{log_id}.json')
+    prefix = '' if kind == 'full' else kind + '_'
+    return os.path.join(_AI_CACHE_DIR, f'{prefix}{log_id}.json')
 
 
-def _load_cached_analysis(log_id):
+def _load_cached_analysis(log_id, kind='full'):
     """Load cached analysis result for a log ID. Returns dict or None."""
-    cache_path = _get_cache_path(log_id)
+    cache_path = _get_cache_path(log_id, kind)
     if os.path.exists(cache_path):
         try:
             with open(cache_path, 'r', encoding='utf-8') as f:
@@ -50,9 +128,9 @@ def _load_cached_analysis(log_id):
     return None
 
 
-def _save_cached_analysis(log_id, data):
+def _save_cached_analysis(log_id, data, kind='full'):
     """Save analysis result to cache."""
-    cache_path = _get_cache_path(log_id)
+    cache_path = _get_cache_path(log_id, kind)
     try:
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(data, f)
@@ -93,6 +171,177 @@ Format your response with clear sections using markdown headers. Be specific wit
 values and explain the reasoning behind each recommendation. If data is insufficient for a
 confident recommendation, say so explicitly.
 """
+
+
+PID_TUNING_SYSTEM_PROMPT = """You are an expert PX4 multicopter PID tuner. You analyze step-response
+plots produced the same way as PID-Analyzer (Plasmatree): a Wiener deconvolution of setpoint vs
+measured rate/attitude reconstructs the average unit-step response.
+
+How to read the curves:
+- The target is y = 1.0 (perfect tracking of a unit step).
+- Rise / response time: how quickly the curve reaches 1. Faster is better, but not at the
+  cost of large overshoot or ringing.
+- Overshoot: peak above 1. About 0–10% is typically healthy; >15–20% is usually too aggressive.
+- Settling time: time until the curve stays within ±5% (or ±2%) of 1.
+- Oscillation crossings: ringing after the rise. Several crossings mean the loop is under-damped.
+- Undershoot / final value < 1: the loop is sluggish or P/I is too low.
+- High-rate vs low-rate curves (rate loop only): if high-rate (>500 deg/s) is much worse,
+  look at D-term and gyro filters (IMU_GYRO_CUTOFF, IMU_DGYRO_CUTOFF).
+
+PX4 parameters:
+- Rate (inner) loop: MC_ROLLRATE_P/I/D, MC_PITCHRATE_P/I/D, MC_YAWRATE_P/I/D
+- Attitude (outer) loop: MC_ROLL_P, MC_PITCH_P, MC_YAW_P
+- Related: IMU_GYRO_CUTOFF, IMU_DGYRO_CUTOFF, MC_*RATE_K (if present)
+
+Typical corrections (change one axis / one gain family at a time, ~10–20%):
+- Slow rise, little/no overshoot, final < 1 → increase P (and maybe I if a persistent lag remains).
+- Large overshoot or ringing → decrease P, or increase D slightly if the rise is otherwise good.
+- Persistent offset after settling → increase I.
+- High-frequency noise / D-term chatter (high-rate curve messy) → lower D or lower
+  IMU_DGYRO_CUTOFF / IMU_GYRO_CUTOFF carefully.
+- Attitude loop should be slower and smoother than the rate loop on the same axis.
+
+Rules:
+- Be specific: name the parameter, current value, and a concrete suggested value.
+- Explain how the step-response shape justifies each change.
+- If a loop looks well tuned, say so and do not invent changes.
+- If there are too few steps, the curve is noisy, or data is missing, say the evidence
+  is insufficient.
+- Never suggest changing many gains at once. Give a short prioritized list.
+
+Format with markdown headers:
+1. Overall assessment
+2. Per-axis / per-loop findings (rate roll/pitch/yaw, then attitude roll/pitch)
+3. Recommended parameter changes (table: parameter, current, suggested, why)
+4. What to test on the next flight
+"""
+
+
+def _build_pid_tuning_prompt(step_data, parameters, flight_summary):
+    """Build the user prompt for PID step-response tuning analysis."""
+    prompt = "# PID Step-Response Tuning Request\n\n"
+    prompt += (
+        "Analyze the reconstructed step-response curves below (same method as the "
+        "Flight Review PID Analysis plots) and recommend PX4 PID / filter changes.\n\n"
+    )
+
+    if flight_summary:
+        prompt += "## Flight Summary\n```json\n"
+        prompt += json.dumps(flight_summary, indent=2, default=str)
+        prompt += "\n```\n\n"
+
+    if parameters:
+        prompt += "## Current PID / Filter Parameters\n```json\n"
+        prompt += json.dumps(parameters, indent=2, default=str)
+        prompt += "\n```\n\n"
+
+    if step_data.get('errors'):
+        prompt += "## Extraction Notes\n"
+        for err in step_data['errors']:
+            prompt += "- {}\n".format(err)
+        prompt += "\n"
+
+    responses = step_data.get('responses') or []
+    if not responses:
+        prompt += ("No step-response curves could be computed. Explain what data is "
+                   "missing and what the pilot should log or fly to get a useful analysis.\n")
+        return prompt
+
+    prompt += "## Step-Response Curves and Metrics\n"
+    prompt += (
+        "Each `response` series is the average reconstructed unit-step (target = 1.0) "
+        "sampled along `time_s`. Use both the metrics and the curve shape.\n\n"
+    )
+    for item in responses:
+        loop = item.get('loop', 'unknown')
+        axis = item.get('axis', 'unknown')
+        prompt += "### {} {} loop\n".format(axis.capitalize(), loop)
+        for key in ('low_rate', 'high_rate'):
+            block = item.get(key)
+            if not block:
+                continue
+            prompt += "#### {}\n".format(block.get('label', key))
+            prompt += "Metrics:\n```json\n"
+            prompt += json.dumps(block.get('metrics', {}), indent=2)
+            prompt += "\n```\n"
+            prompt += "Curve (time_s, response):\n```json\n"
+            prompt += json.dumps({
+                'time_s': block.get('time_s', []),
+                'response': block.get('response', []),
+            }, indent=2)
+            prompt += "\n```\n\n"
+
+    return prompt
+
+
+def _parse_requested_model(handler):
+    """Read an optional model override from the JSON request body."""
+    model = _default_analysis_model()
+    try:
+        body_args = handler.request.body
+        if body_args:
+            parsed = json.loads(body_args)
+            if isinstance(parsed, dict) and parsed.get('model'):
+                model = _sanitize_model_id(parsed.get('model'), fallback=model)
+    except (ValueError, json.JSONDecodeError, TypeError):
+        pass
+    return model
+
+
+def _is_reasoning_model(model):
+    """Whether to request high reasoning effort for this model id."""
+    lower = (model or '').lower()
+    return 'fast' in lower and ('grok-3' in lower or 'grok-4' in lower)
+
+
+@tornado.gen.coroutine
+def _call_grok(api_key, model, system_prompt, user_prompt):
+    """Call the xAI chat completions API. Returns (ok, payload_or_error, http_status)."""
+    request_body = {
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt},
+        ],
+        'temperature': 0.3,
+        'max_tokens': 4096,
+    }
+    if _is_reasoning_model(model):
+        request_body['reasoning'] = {'effort': 'high'}
+
+    http_client = AsyncHTTPClient()
+    request = HTTPRequest(
+        url='https://api.x.ai/v1/chat/completions',
+        method='POST',
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer {}'.format(api_key),
+        },
+        body=json.dumps(request_body),
+        request_timeout=120,
+        connect_timeout=30,
+    )
+    response = yield http_client.fetch(request, raise_error=False)
+
+    if response.code == 200:
+        result = json.loads(response.body)
+        message = result['choices'][0]['message']
+        ai_response = message.get('content')
+        reasoning = message.get('reasoning_content')
+        raise tornado.gen.Return((True, {
+            'analysis': ai_response,
+            'reasoning': reasoning,
+            'model': model,
+        }, 200))
+
+    error_msg = 'xAI API error (HTTP {})'.format(response.code)
+    try:
+        error_body = json.loads(response.body)
+        if 'error' in error_body:
+            error_msg += ': ' + str(error_body['error'].get('message', ''))
+    except Exception:  # pylint: disable=broad-except
+        error_msg += ': ' + response.body.decode('utf-8', errors='replace')[:200]
+    raise tornado.gen.Return((False, error_msg, 502))
 
 
 def _downsample(arr, max_points=500):
@@ -687,7 +936,7 @@ class AIAnalysisHandler(TornadoRequestHandlerBase):
         self.write(template.render(
             log_id=log_id,
             has_api_key=has_api_key,
-            default_model=get_xai_model(),
+            default_model=_default_analysis_model(),
             current_user=self.get_current_user(),
         ))
 
@@ -798,7 +1047,7 @@ class AIAnalysisModelsHandler(TornadoRequestHandlerBase):
         self.set_header('Content-Type', 'application/json')
         self.write(json.dumps({
             'models': unique_ids,
-            'default': get_xai_model(),
+            'default': _default_analysis_model(unique_ids),
         }))
 
 
@@ -839,23 +1088,8 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
             self.write({'error': 'xAI API key not configured. Set xai_api_key in config or XAI_API_KEY env var.'})
             return
 
-        # Allow model override from request body, else fall back to configured default
-        model = get_xai_model()
-        try:
-            body_args = self.request.body
-            if body_args:
-                try:
-                    parsed = json.loads(body_args)
-                    if isinstance(parsed, dict) and parsed.get('model'):
-                        candidate = str(parsed['model']).strip()
-                        # Only allow safe model id characters
-                        if candidate and all(
-                                c.isalnum() or c in '-_.:' for c in candidate):
-                            model = candidate
-                except (ValueError, json.JSONDecodeError):
-                    pass
-        except Exception:
-            pass
+        # Allow model override from request body, else newest Grok
+        model = _parse_requested_model(self)
 
         try:
             # Load the log file
@@ -882,52 +1116,13 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
                 parameters, logged_messages, motor_failure
             )
 
-            # Call the xAI Grok API
-            request_body = {
-                'model': model,
-                'messages': [
-                    {'role': 'system', 'content': SYSTEM_PROMPT},
-                    {'role': 'user', 'content': user_prompt},
-                ],
-                'temperature': 0.3,
-                'max_tokens': 4096,
-            }
-
-            # Check if this is a reasoning model
-            is_reasoning = 'fast' in model.lower() and ('grok-3' in model.lower() or 'grok-4' in model.lower())
-            if is_reasoning:
-                request_body['reasoning'] = {
-                    'effort': 'high'
-                }
-
-            http_client = AsyncHTTPClient()
-            request = HTTPRequest(
-                url='https://api.x.ai/v1/chat/completions',
-                method='POST',
-                headers={
-                    'Content-Type': 'application/json',
-                    'Authorization': f'Bearer {api_key}',
-                },
-                body=json.dumps(request_body),
-                request_timeout=120,  # 2min timeout for reasoning models
-                connect_timeout=30,
-            )
-
-            response = yield http_client.fetch(request, raise_error=False)
-
-            if response.code == 200:
-                result = json.loads(response.body)
-                ai_response = result['choices'][0]['message']['content']
-
-                # Extract reasoning content if available
-                reasoning = None
-                if 'reasoning_content' in result['choices'][0]['message']:
-                    reasoning = result['choices'][0]['message']['reasoning_content']
-
+            ok, payload, status = yield _call_grok(
+                api_key, model, SYSTEM_PROMPT, user_prompt)
+            if ok:
                 response_data = {
-                    'analysis': ai_response,
-                    'reasoning': reasoning,
-                    'model': model,
+                    'analysis': payload['analysis'],
+                    'reasoning': payload['reasoning'],
+                    'model': payload['model'],
                     'data_summary': {
                         'duration_s': flight_summary.get('duration_s', 0),
                         'mav_type': flight_summary.get('mav_type', 'Unknown'),
@@ -937,25 +1132,108 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
                         'num_messages': len(logged_messages),
                     }
                 }
-
-                # Cache the result
                 _save_cached_analysis(log_id, response_data)
-
                 self.set_header('Content-Type', 'application/json')
                 self.write(json.dumps(response_data))
             else:
-                error_msg = f'xAI API error (HTTP {response.code})'
-                try:
-                    error_body = json.loads(response.body)
-                    if 'error' in error_body:
-                        error_msg += ': ' + str(error_body['error'].get('message', ''))
-                except Exception:
-                    error_msg += ': ' + response.body.decode('utf-8', errors='replace')[:200]
-
-                self.set_status(502)
-                self.write({'error': error_msg})
+                self.set_status(status)
+                self.write({'error': payload})
 
         except Exception as e:
             traceback.print_exc()
             self.set_status(500)
             self.write({'error': f'Analysis failed: {str(e)}'})
+
+
+class PIDAIAnalysisAPIHandler(TornadoRequestHandlerBase):
+    """API handler that analyzes PID step-response curves and suggests tuning."""
+
+    @tornado.web.authenticated
+    def get(self, *args, **kwargs):
+        """GET request - return cached PID analysis if available."""
+        log_id = self.get_argument('log', '')
+        if not validate_log_id(log_id):
+            self.set_status(400)
+            self.write({'error': 'Invalid log ID'})
+            return
+
+        cached = _load_cached_analysis(log_id, kind='pid')
+        if cached:
+            cached['cached'] = True
+            self.set_header('Content-Type', 'application/json')
+            self.write(json.dumps(cached))
+        else:
+            self.set_header('Content-Type', 'application/json')
+            self.write(json.dumps({'cached': False}))
+
+    @tornado.web.authenticated
+    @tornado.gen.coroutine
+    def post(self, *args, **kwargs):
+        """POST request - run PID step-response tuning analysis."""
+        log_id = self.get_argument('log', '')
+        if not validate_log_id(log_id):
+            self.set_status(400)
+            self.write({'error': 'Invalid log ID'})
+            return
+
+        api_key = get_xai_api_key()
+        if not api_key or not api_key.strip():
+            self.set_status(500)
+            self.write({'error': 'xAI API key not configured. Set xai_api_key in config or XAI_API_KEY env var.'})
+            return
+
+        model = _parse_requested_model(self)
+
+        try:
+            log_file_name = get_log_filename(log_id)
+            ulog = load_log_file(log_file_name)
+            px4_ulog = PX4ULog(ulog)
+            try:
+                px4_ulog.add_roll_pitch_yaw()
+            except Exception:
+                pass
+
+            # Trace construction is CPU/memory heavy; keep it off the IOLoop.
+            step_data = yield tornado.ioloop.IOLoop.current().run_in_executor(
+                None, collect_pid_step_responses, ulog)
+
+            flight_summary = _extract_flight_summary(ulog, px4_ulog)
+            parameters = {
+                k: v for k, v in _extract_parameters(ulog).items()
+                if not k.startswith('EKF2_')
+            }
+            user_prompt = _build_pid_tuning_prompt(
+                step_data, parameters, flight_summary)
+
+            ok, payload, status = yield _call_grok(
+                api_key, model, PID_TUNING_SYSTEM_PROMPT, user_prompt)
+            if ok:
+                loops = []
+                for item in step_data.get('responses', []):
+                    loops.append('{} {}'.format(item.get('axis'), item.get('loop')))
+                response_data = {
+                    'analysis': payload['analysis'],
+                    'reasoning': payload['reasoning'],
+                    'model': payload['model'],
+                    'data_summary': {
+                        'duration_s': flight_summary.get('duration_s', 0),
+                        'mav_type': flight_summary.get('mav_type', 'Unknown'),
+                        'num_parameters': len(parameters),
+                        'num_step_responses': len(step_data.get('responses', [])),
+                        'has_rate': step_data.get('has_rate', False),
+                        'has_attitude': step_data.get('has_attitude', False),
+                        'loops': loops,
+                        'errors': step_data.get('errors', []),
+                    }
+                }
+                _save_cached_analysis(log_id, response_data, kind='pid')
+                self.set_header('Content-Type', 'application/json')
+                self.write(json.dumps(response_data))
+            else:
+                self.set_status(status)
+                self.write({'error': payload})
+
+        except Exception as e:
+            traceback.print_exc()
+            self.set_status(500)
+            self.write({'error': 'PID analysis failed: {}'.format(str(e))})

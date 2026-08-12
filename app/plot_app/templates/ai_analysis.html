@@ -232,7 +232,7 @@
                            or set the <code>XAI_API_KEY</code> environment variable.</p>
                         <pre style="text-align:left; max-width:400px; margin:16px auto;">[ai_analysis]
 xai_api_key = xai-your-key-here
-xai_model = grok-4-fast</pre>
+xai_model = grok-4.6</pre>
                         <p class="text-muted mt-2">Get an API key at <a href="https://console.x.ai/" target="_blank">console.x.ai</a></p>
                     </div>
                 </div>
@@ -465,8 +465,8 @@ xai_model = grok-4-fast</pre>
                 if (!data || !Array.isArray(data.models) || data.models.length === 0) {
                     return;
                 }
-                const preferred = DEFAULT_MODEL;
-                // Build options
+                const preferred = data.default || DEFAULT_MODEL;
+                // Build options — always default to the newest Grok model
                 select.innerHTML = '';
                 let foundPreferred = false;
                 data.models.forEach(mid => {
@@ -483,10 +483,11 @@ xai_model = grok-4-fast</pre>
                 if (!foundPreferred && preferred) {
                     const opt = document.createElement('option');
                     opt.value = preferred;
-                    opt.textContent = preferred + ' (configured default)';
+                    opt.textContent = preferred + ' (newest)';
                     opt.selected = true;
                     select.insertBefore(opt, select.firstChild);
                 }
+                select.value = preferred;
             })
             .catch(() => {
                 // Keep the single default option already present
@@ -510,20 +511,8 @@ xai_model = grok-4-fast</pre>
                 document.getElementById('run-analysis-btn').classList.add('d-none');
                 document.getElementById('rerun-analysis-btn').classList.remove('d-none');
                 document.getElementById('export-analysis-btn').classList.remove('d-none');
-                // Sync the model selector to the cached model if possible
-                if (data.model) {
-                    const select = document.getElementById('model-select');
-                    if (select) {
-                        const exists = Array.from(select.options).some(o => o.value === data.model);
-                        if (!exists) {
-                            const opt = document.createElement('option');
-                            opt.value = data.model;
-                            opt.textContent = data.model;
-                            select.appendChild(opt);
-                        }
-                        select.value = data.model;
-                    }
-                }
+                // Keep the selector on the newest model so a re-run does not
+                // stay pinned to whatever older model produced the cache.
             }
         })
         .catch(() => { /* ignore - user can run manually */ });

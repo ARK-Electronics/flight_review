@@ -19,6 +19,10 @@
 {{ corrupt_log_html }}
 {{ error_labels_html }}
 
+{% if is_pid_analysis_page is defined and is_pid_analysis_page %}
+{% include 'pid_ai_analysis.html' %}
+{% endif %}
+
 {% if has_position_data %}
 
     <!-- Leaflet map plot -->
