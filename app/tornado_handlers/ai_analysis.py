@@ -13,7 +13,6 @@ import traceback
 import numpy as np
 import tornado.web
 import tornado.gen
-import tornado.ioloop
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
 # this is needed for the following imports
@@ -21,7 +20,6 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../pl
 from config import get_xai_api_key, get_xai_model, get_cache_filepath
 from helper import validate_log_id, get_log_filename, load_log_file, \
     get_flight_mode_changes, flight_modes_table
-from pid_step_data import collect_pid_step_responses
 
 from pyulog.px4 import PX4ULog
 
@@ -173,107 +171,6 @@ confident recommendation, say so explicitly.
 """
 
 
-PID_TUNING_SYSTEM_PROMPT = """You are an expert PX4 multicopter PID tuner. You analyze step-response
-plots produced the same way as PID-Analyzer (Plasmatree): a Wiener deconvolution of setpoint vs
-measured rate/attitude reconstructs the average unit-step response.
-
-How to read the curves:
-- The target is y = 1.0 (perfect tracking of a unit step).
-- Rise / response time: how quickly the curve reaches 1. Faster is better, but not at the
-  cost of large overshoot or ringing.
-- Overshoot: peak above 1. About 0–10% is typically healthy; >15–20% is usually too aggressive.
-- Settling time: time until the curve stays within ±5% (or ±2%) of 1.
-- Oscillation crossings: ringing after the rise. Several crossings mean the loop is under-damped.
-- Undershoot / final value < 1: the loop is sluggish or P/I is too low.
-- High-rate vs low-rate curves (rate loop only): if high-rate (>500 deg/s) is much worse,
-  look at D-term and gyro filters (IMU_GYRO_CUTOFF, IMU_DGYRO_CUTOFF).
-
-PX4 parameters:
-- Rate (inner) loop: MC_ROLLRATE_P/I/D, MC_PITCHRATE_P/I/D, MC_YAWRATE_P/I/D
-- Attitude (outer) loop: MC_ROLL_P, MC_PITCH_P, MC_YAW_P
-- Related: IMU_GYRO_CUTOFF, IMU_DGYRO_CUTOFF, MC_*RATE_K (if present)
-
-Typical corrections (change one axis / one gain family at a time, ~10–20%):
-- Slow rise, little/no overshoot, final < 1 → increase P (and maybe I if a persistent lag remains).
-- Large overshoot or ringing → decrease P, or increase D slightly if the rise is otherwise good.
-- Persistent offset after settling → increase I.
-- High-frequency noise / D-term chatter (high-rate curve messy) → lower D or lower
-  IMU_DGYRO_CUTOFF / IMU_GYRO_CUTOFF carefully.
-- Attitude loop should be slower and smoother than the rate loop on the same axis.
-
-Rules:
-- Be specific: name the parameter, current value, and a concrete suggested value.
-- Explain how the step-response shape justifies each change.
-- If a loop looks well tuned, say so and do not invent changes.
-- If there are too few steps, the curve is noisy, or data is missing, say the evidence
-  is insufficient.
-- Never suggest changing many gains at once. Give a short prioritized list.
-
-Format with markdown headers:
-1. Overall assessment
-2. Per-axis / per-loop findings (rate roll/pitch/yaw, then attitude roll/pitch)
-3. Recommended parameter changes (table: parameter, current, suggested, why)
-4. What to test on the next flight
-"""
-
-
-def _build_pid_tuning_prompt(step_data, parameters, flight_summary):
-    """Build the user prompt for PID step-response tuning analysis."""
-    prompt = "# PID Step-Response Tuning Request\n\n"
-    prompt += (
-        "Analyze the reconstructed step-response curves below (same method as the "
-        "Flight Review PID Analysis plots) and recommend PX4 PID / filter changes.\n\n"
-    )
-
-    if flight_summary:
-        prompt += "## Flight Summary\n```json\n"
-        prompt += json.dumps(flight_summary, indent=2, default=str)
-        prompt += "\n```\n\n"
-
-    if parameters:
-        prompt += "## Current PID / Filter Parameters\n```json\n"
-        prompt += json.dumps(parameters, indent=2, default=str)
-        prompt += "\n```\n\n"
-
-    if step_data.get('errors'):
-        prompt += "## Extraction Notes\n"
-        for err in step_data['errors']:
-            prompt += "- {}\n".format(err)
-        prompt += "\n"
-
-    responses = step_data.get('responses') or []
-    if not responses:
-        prompt += ("No step-response curves could be computed. Explain what data is "
-                   "missing and what the pilot should log or fly to get a useful analysis.\n")
-        return prompt
-
-    prompt += "## Step-Response Curves and Metrics\n"
-    prompt += (
-        "Each `response` series is the average reconstructed unit-step (target = 1.0) "
-        "sampled along `time_s`. Use both the metrics and the curve shape.\n\n"
-    )
-    for item in responses:
-        loop = item.get('loop', 'unknown')
-        axis = item.get('axis', 'unknown')
-        prompt += "### {} {} loop\n".format(axis.capitalize(), loop)
-        for key in ('low_rate', 'high_rate'):
-            block = item.get(key)
-            if not block:
-                continue
-            prompt += "#### {}\n".format(block.get('label', key))
-            prompt += "Metrics:\n```json\n"
-            prompt += json.dumps(block.get('metrics', {}), indent=2)
-            prompt += "\n```\n"
-            prompt += "Curve (time_s, response):\n```json\n"
-            prompt += json.dumps({
-                'time_s': block.get('time_s', []),
-                'response': block.get('response', []),
-            }, indent=2)
-            prompt += "\n```\n\n"
-
-    return prompt
-
-
 def _parse_requested_model(handler):
     """Read an optional model override from the JSON request body."""
     model = _default_analysis_model()
@@ -286,6 +183,78 @@ def _parse_requested_model(handler):
     except (ValueError, json.JSONDecodeError, TypeError):
         pass
     return model
+
+
+def _json_error(handler, status, message):
+    """Write a JSON error payload and set the HTTP status."""
+    handler.set_status(status)
+    handler.write({'error': message})
+
+
+def _checked_log_id(handler):
+    """Return a valid log id, or write a 400 and return None."""
+    log_id = handler.get_argument('log', '')
+    if not validate_log_id(log_id):
+        _json_error(handler, 400, 'Invalid log ID')
+        return None
+    return log_id
+
+
+def _require_api_key(handler):
+    """Return the configured API key, or write a 500 and return None."""
+    api_key = get_xai_api_key()
+    if not api_key or not api_key.strip():
+        _json_error(handler, 500,
+                    'xAI API key not configured. Set xai_api_key in config or XAI_API_KEY env var.')
+        return None
+    return api_key
+
+
+def _write_cached_or_empty(handler, log_id, kind='full'):
+    """Write a cached analysis JSON payload (or {cached: false})."""
+    cached = _load_cached_analysis(log_id, kind)
+    handler.set_header('Content-Type', 'application/json')
+    if cached:
+        cached['cached'] = True
+        handler.write(json.dumps(cached))
+        return True
+    handler.write(json.dumps({'cached': False}))
+    return False
+
+
+def _load_ulog_for_analysis(log_id):
+    """Load a ULog and attach roll/pitch/yaw when available."""
+    ulog = load_log_file(get_log_filename(log_id))
+    px4_ulog = PX4ULog(ulog)
+    try:
+        px4_ulog.add_roll_pitch_yaw()
+    except Exception:  # pylint: disable=broad-except
+        pass
+    return ulog, px4_ulog
+
+
+def _begin_analysis_request(handler):
+    """Validate log id and API key. Returns (log_id, api_key, model) or Nones."""
+    log_id = _checked_log_id(handler)
+    if not log_id:
+        return None, None, None
+    api_key = _require_api_key(handler)
+    if not api_key:
+        return None, None, None
+    return log_id, api_key, _parse_requested_model(handler)
+
+
+def _write_analysis_success(handler, payload, data_summary, log_id, kind='full'):
+    """Cache and write a successful analysis response."""
+    response_data = {
+        'analysis': payload['analysis'],
+        'reasoning': payload['reasoning'],
+        'model': payload['model'],
+        'data_summary': data_summary,
+    }
+    _save_cached_analysis(log_id, response_data, kind=kind)
+    handler.set_header('Content-Type', 'application/json')
+    handler.write(json.dumps(response_data))
 
 
 def _is_reasoning_model(model):
@@ -1057,49 +1026,21 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
     @tornado.web.authenticated
     def get(self, *args, **kwargs):
         """GET request - return cached analysis if available."""
-        log_id = self.get_argument('log', '')
-        if not validate_log_id(log_id):
-            self.set_status(400)
-            self.write({'error': 'Invalid log ID'})
+        log_id = _checked_log_id(self)
+        if not log_id:
             return
-
-        cached = _load_cached_analysis(log_id)
-        if cached:
-            cached['cached'] = True
-            self.set_header('Content-Type', 'application/json')
-            self.write(json.dumps(cached))
-        else:
-            self.set_header('Content-Type', 'application/json')
-            self.write(json.dumps({'cached': False}))
+        _write_cached_or_empty(self, log_id)
 
     @tornado.web.authenticated
     @tornado.gen.coroutine
     def post(self, *args, **kwargs):
         """POST request - run AI analysis on the log."""
-        log_id = self.get_argument('log', '')
-        if not validate_log_id(log_id):
-            self.set_status(400)
-            self.write({'error': 'Invalid log ID'})
+        log_id, api_key, model = _begin_analysis_request(self)
+        if not log_id:
             return
-
-        api_key = get_xai_api_key()
-        if not api_key or not api_key.strip():
-            self.set_status(500)
-            self.write({'error': 'xAI API key not configured. Set xai_api_key in config or XAI_API_KEY env var.'})
-            return
-
-        # Allow model override from request body, else newest Grok
-        model = _parse_requested_model(self)
 
         try:
-            # Load the log file
-            log_file_name = get_log_filename(log_id)
-            ulog = load_log_file(log_file_name)
-            px4_ulog = PX4ULog(ulog)
-            try:
-                px4_ulog.add_roll_pitch_yaw()
-            except Exception:
-                pass
+            ulog, px4_ulog = _load_ulog_for_analysis(log_id)
 
             # Extract all data
             flight_summary = _extract_flight_summary(ulog, px4_ulog)
@@ -1119,121 +1060,17 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
             ok, payload, status = yield _call_grok(
                 api_key, model, SYSTEM_PROMPT, user_prompt)
             if ok:
-                response_data = {
-                    'analysis': payload['analysis'],
-                    'reasoning': payload['reasoning'],
-                    'model': payload['model'],
-                    'data_summary': {
-                        'duration_s': flight_summary.get('duration_s', 0),
-                        'mav_type': flight_summary.get('mav_type', 'Unknown'),
-                        'num_parameters': len(parameters),
-                        'has_ekf_data': bool(ekf_data),
-                        'has_pid_data': bool(pid_data),
-                        'num_messages': len(logged_messages),
-                    }
-                }
-                _save_cached_analysis(log_id, response_data)
-                self.set_header('Content-Type', 'application/json')
-                self.write(json.dumps(response_data))
+                _write_analysis_success(self, payload, {
+                    'duration_s': flight_summary.get('duration_s', 0),
+                    'mav_type': flight_summary.get('mav_type', 'Unknown'),
+                    'num_parameters': len(parameters),
+                    'has_ekf_data': bool(ekf_data),
+                    'has_pid_data': bool(pid_data),
+                    'num_messages': len(logged_messages),
+                }, log_id)
             else:
-                self.set_status(status)
-                self.write({'error': payload})
+                _json_error(self, status, payload)
 
         except Exception as e:
             traceback.print_exc()
-            self.set_status(500)
-            self.write({'error': f'Analysis failed: {str(e)}'})
-
-
-class PIDAIAnalysisAPIHandler(TornadoRequestHandlerBase):
-    """API handler that analyzes PID step-response curves and suggests tuning."""
-
-    @tornado.web.authenticated
-    def get(self, *args, **kwargs):
-        """GET request - return cached PID analysis if available."""
-        log_id = self.get_argument('log', '')
-        if not validate_log_id(log_id):
-            self.set_status(400)
-            self.write({'error': 'Invalid log ID'})
-            return
-
-        cached = _load_cached_analysis(log_id, kind='pid')
-        if cached:
-            cached['cached'] = True
-            self.set_header('Content-Type', 'application/json')
-            self.write(json.dumps(cached))
-        else:
-            self.set_header('Content-Type', 'application/json')
-            self.write(json.dumps({'cached': False}))
-
-    @tornado.web.authenticated
-    @tornado.gen.coroutine
-    def post(self, *args, **kwargs):
-        """POST request - run PID step-response tuning analysis."""
-        log_id = self.get_argument('log', '')
-        if not validate_log_id(log_id):
-            self.set_status(400)
-            self.write({'error': 'Invalid log ID'})
-            return
-
-        api_key = get_xai_api_key()
-        if not api_key or not api_key.strip():
-            self.set_status(500)
-            self.write({'error': 'xAI API key not configured. Set xai_api_key in config or XAI_API_KEY env var.'})
-            return
-
-        model = _parse_requested_model(self)
-
-        try:
-            log_file_name = get_log_filename(log_id)
-            ulog = load_log_file(log_file_name)
-            px4_ulog = PX4ULog(ulog)
-            try:
-                px4_ulog.add_roll_pitch_yaw()
-            except Exception:
-                pass
-
-            # Trace construction is CPU/memory heavy; keep it off the IOLoop.
-            step_data = yield tornado.ioloop.IOLoop.current().run_in_executor(
-                None, collect_pid_step_responses, ulog)
-
-            flight_summary = _extract_flight_summary(ulog, px4_ulog)
-            parameters = {
-                k: v for k, v in _extract_parameters(ulog).items()
-                if not k.startswith('EKF2_')
-            }
-            user_prompt = _build_pid_tuning_prompt(
-                step_data, parameters, flight_summary)
-
-            ok, payload, status = yield _call_grok(
-                api_key, model, PID_TUNING_SYSTEM_PROMPT, user_prompt)
-            if ok:
-                loops = []
-                for item in step_data.get('responses', []):
-                    loops.append('{} {}'.format(item.get('axis'), item.get('loop')))
-                response_data = {
-                    'analysis': payload['analysis'],
-                    'reasoning': payload['reasoning'],
-                    'model': payload['model'],
-                    'data_summary': {
-                        'duration_s': flight_summary.get('duration_s', 0),
-                        'mav_type': flight_summary.get('mav_type', 'Unknown'),
-                        'num_parameters': len(parameters),
-                        'num_step_responses': len(step_data.get('responses', [])),
-                        'has_rate': step_data.get('has_rate', False),
-                        'has_attitude': step_data.get('has_attitude', False),
-                        'loops': loops,
-                        'errors': step_data.get('errors', []),
-                    }
-                }
-                _save_cached_analysis(log_id, response_data, kind='pid')
-                self.set_header('Content-Type', 'application/json')
-                self.write(json.dumps(response_data))
-            else:
-                self.set_status(status)
-                self.write({'error': payload})
-
-        except Exception as e:
-            traceback.print_exc()
-            self.set_status(500)
-            self.write({'error': 'PID analysis failed: {}'.format(str(e))})
+            _json_error(self, 500, 'Analysis failed: {}'.format(str(e)))

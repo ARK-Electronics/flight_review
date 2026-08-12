@@ -42,8 +42,8 @@ def _attitude_axis_deg(dataset, axis):
         qx = dataset.data['q[1]']
         qy = dataset.data['q[2]']
         qz = dataset.data['q[3]']
-    except KeyError:
-        raise KeyError(axis)
+    except KeyError as exc:
+        raise KeyError(axis) from exc
     if axis == 'roll':
         return np.rad2deg(np.arctan2(2.0 * (qw * qx + qy * qz),
                                      1.0 - 2.0 * (qx * qx + qy * qy)))

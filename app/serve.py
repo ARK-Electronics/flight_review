@@ -33,7 +33,8 @@ from tornado_handlers.auth import (
 from tornado_handlers.api_key import AccountHandler
 from tornado_handlers.admin import AdminUsersHandler, AdminUsersAPIHandler
 from tornado_handlers.ai_analysis import AIAnalysisHandler, AIAnalysisAPIHandler, \
-    AIAnalysisModelsHandler, PIDAIAnalysisAPIHandler
+    AIAnalysisModelsHandler
+from tornado_handlers.pid_ai_analysis import PIDAIAnalysisAPIHandler
 
 from helper import set_log_id_is_filename, print_cache_info #pylint: disable=C0411
 from config import debug_print_timing, get_overview_img_filepath, get_domain_name #pylint: disable=C0411
