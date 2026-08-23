@@ -78,6 +78,11 @@ MAX_CHANGED_PARAMETERS = int(os.environ.get(
     'FLIGHT_REVIEW_MAX_CHANGED_PARAMETERS', '50000'))
 LARGE_LOG_BYTES = int(os.environ.get(
     'FLIGHT_REVIEW_LARGE_LOG_BYTES', str(80 * 1024 * 1024)))
+# Upload POST must stay fast and cheap: scanning a 200–500 MB ULog (even with
+# a topic filter) still walks every DATA message and can stall or OOM the
+# request. Above this size, store the file from the definition section only.
+UPLOAD_SCAN_MAX_BYTES = int(os.environ.get(
+    'FLIGHT_REVIEW_UPLOAD_SCAN_MAX_BYTES', str(32 * 1024 * 1024)))
 
 _PARSE_BUDGET = {'used': 0}
 
@@ -272,12 +277,20 @@ def parse_ulog_header(file_name: str):
 
 
 def parse_ulog_for_upload(file_name: str):
-    """Cheap parse for upload: core topics only, then header-only on MemoryError.
+    """Cheap parse for upload metadata.
 
-    Upload only needs msg_info_dict, parameters, and vehicle_status for the
-    vehicle DB / notification email. Skipping FIFO (and other high-rate)
-    topics is what keeps large logs from OOM'ing during POST /upload.
+    Upload only needs msg_info_dict, parameters, and (when cheap) vehicle_status
+    for the vehicle DB / notification email. Large files skip the DATA section
+    entirely so POST /upload cannot stall or OOM while walking FIFO topics.
     """
+    try:
+        size = os.path.getsize(file_name)
+    except OSError:
+        size = 0
+    if size >= UPLOAD_SCAN_MAX_BYTES:
+        print('ulog parse: %s is %d bytes; upload uses header-only' % (
+            file_name, size), flush=True)
+        return parse_ulog_header(file_name)
     try:
         return SafeULog(file_name, ULOG_UPLOAD_MSG_FILTER, disable_str_exceptions=True)
     except MemoryError:

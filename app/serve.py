@@ -117,6 +117,14 @@ server_kwargs['allow_websocket_origin'] = list(set(server_kwargs['allow_websocke
 
 server_kwargs['websocket_max_message_size'] = 100 * 1024 * 1024
 
+# Plot generation for a large ULog can take longer than Bokeh's defaults
+# (session token 300s, unused session 15s). The browser websocket then
+# fails with "Token is expired" before the page finishes loading.
+server_kwargs['session_token_expiration'] = int(os.environ.get(
+    'BOKEH_SESSION_TOKEN_EXPIRATION', '3600'))
+server_kwargs['unused_session_lifetime_milliseconds'] = int(os.environ.get(
+    'BOKEH_UNUSED_SESSION_LIFETIME_MS', '600000'))
+
 # increase the maximum upload size (default is 100MB)
 server_kwargs['http_server_kwargs'] = {
     'max_buffer_size': 500 * 1024 * 1024,

@@ -13,6 +13,7 @@ import sys
 import traceback
 import uuid
 import binascii
+from concurrent.futures import BrokenExecutor
 import tornado.escape
 import tornado.web
 from tornado.ioloop import IOLoop
@@ -509,13 +510,14 @@ class UploadHandler(TornadoRequestHandlerBase):
                             400,
                             'Log parsing took too long; the file may be '
                             'corrupt or unsupported.') from e
-                    except (ParserCrashed, ULogException) as parse_err:
-                        # ParserCrashed: worker SIGKILL'd (cgroup OOM).
+                    except (ParserCrashed, ULogException, BrokenExecutor) as parse_err:
+                        # ParserCrashed / BrokenExecutor: worker died (fork+OOM
+                        # used to surface as BrokenProcessPool on recv).
                         # ULogException from MemoryError: pyulog ran out of RAM
                         # on FIFO-heavy data. Header-only is tiny and still
                         # gives vehicle / software metadata so the upload can
                         # succeed; plots load later via the capped parser.
-                        is_oom = isinstance(parse_err, ParserCrashed) or \
+                        is_oom = isinstance(parse_err, (ParserCrashed, BrokenExecutor)) or \
                             isinstance(parse_err.__cause__, MemoryError)
                         if isinstance(parse_err, ULogException) and not is_oom:
                             raise

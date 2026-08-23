@@ -94,6 +94,15 @@ class UlogParseTests(unittest.TestCase):
             # not only the first N).
             self.assertGreater(int(ulog.last_timestamp), 1000)
 
+    def test_upload_parse_large_file_is_header_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'huge.ulg')
+            write_synthetic_ulog(path, n_status=4, n_fifo=20)
+            with mock.patch.object(ulog_parse, 'UPLOAD_SCAN_MAX_BYTES', 1):
+                ulog = ulog_parse.parse_ulog_for_upload(path)
+            self.assertEqual(ulog.msg_info_dict.get('sys_name'), 'PX4')
+            self.assertEqual(ulog.data_list, [])
+
     def test_upload_parse_skips_fifo(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, 'fifo.ulg')
