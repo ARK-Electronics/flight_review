@@ -31,6 +31,7 @@ from overview_generator import generate_overview_img_from_id
 
 from logs.px4_ulog_compat import PX4ULogCompat
 from logs.loader import UnsupportedLogFormat
+from logs.ulog_parse import parse_ulog_header
 
 
 #pylint: disable=relative-beyond-top-level
@@ -508,14 +509,36 @@ class UploadHandler(TornadoRequestHandlerBase):
                             400,
                             'Log parsing took too long; the file may be '
                             'corrupt or unsupported.') from e
-                    except ParserCrashed as e:
+                    except (ParserCrashed, ULogException) as parse_err:
+                        # ParserCrashed: worker SIGKILL'd (cgroup OOM).
+                        # ULogException from MemoryError: pyulog ran out of RAM
+                        # on FIFO-heavy data. Header-only is tiny and still
+                        # gives vehicle / software metadata so the upload can
+                        # succeed; plots load later via the capped parser.
+                        is_oom = isinstance(parse_err, ParserCrashed) or \
+                            isinstance(parse_err.__cause__, MemoryError)
+                        if isinstance(parse_err, ULogException) and not is_oom:
+                            raise
+                        if not ulog_file_name.endswith('.ulg'):
+                            raise CustomHTTPError(
+                                400,
+                                'Log parser failed unexpectedly on this file.'
+                            ) from parse_err
                         _upload_log.error(
-                            'parse_crashed ip=%s uploader=%s id=%s size=%s',
+                            'parse_oom ip=%s uploader=%s id=%s size=%s err=%s; '
+                            'retrying header-only',
                             client_addr, uploader_username or '-',
-                            log_id, upload_size)
-                        raise CustomHTTPError(
-                            400,
-                            'Log parser failed unexpectedly on this file.') from e
+                            log_id, upload_size, type(parse_err).__name__)
+                        try:
+                            ulog = parse_ulog_header(ulog_file_name)
+                        except Exception as header_err:
+                            raise CustomHTTPError(
+                                400,
+                                'This log is too large to parse on the '
+                                'server. Try disabling high-rate FIFO '
+                                'logging (sensor_accel_fifo / '
+                                'sensor_gyro_fifo) or upload a shorter '
+                                'log.') from header_err
 
                 # put additional data into a DB
                 con = get_db_connection()
@@ -644,6 +667,13 @@ class UploadHandler(TornadoRequestHandlerBase):
                 raise
 
             except ULogException as e:
+                if isinstance(e.__cause__, MemoryError):
+                    raise CustomHTTPError(
+                        400,
+                        'This log is too large to parse on the server. '
+                        'Try disabling high-rate FIFO logging '
+                        '(sensor_accel_fifo / sensor_gyro_fifo) or upload a '
+                        'shorter log.') from e
                 raise CustomHTTPError(
                     400,
                     'Failed to parse the file. It is most likely corrupt.') from e

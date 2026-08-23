@@ -67,10 +67,15 @@ def _parser_initializer():
 
 
 def _worker_load_log(file_name: str):
-    """Top-level function so it pickles cleanly into worker processes."""
+    """Top-level function so it pickles cleanly into worker processes.
+
+    Upload only needs metadata (vehicle UUID, params, mav type), so use the
+    lightweight parser. Loading sensor_*_fifo here is what OOM'd large logs
+    with MemoryError during POST /upload.
+    """
     # Import here so the import cost is paid in the worker, not the parent.
-    from helper import load_log_file  # type: ignore
-    return load_log_file(file_name)
+    from helper import load_log_file_for_upload  # type: ignore
+    return load_log_file_for_upload(file_name)
 
 
 _parser_pool: Optional[ProcessPoolExecutor] = None
