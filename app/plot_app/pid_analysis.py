@@ -35,7 +35,8 @@ class Trace:
     noise_superpos = 16     # subsampling for noise analysis windows
 
     def __init__(self, name, time, gyro_rate, gyro_setpoint, throttle,
-                 d_err=None, debug=None):
+                 d_err=None, debug=None, high_input_threshold=None,
+                 min_input_threshold=None):
         """Initialize a Trace object, that does the analysis for a single axis.
 
         Note: all data arrays must have the same length as time
@@ -47,6 +48,11 @@ class Trace:
 
         :param d_err: np array with D term error (optional)
         :param debug: TODO
+        :param high_input_threshold: split low/high input windows (deg/s or deg)
+        :param min_input_threshold: ignore windows whose peak |input| is below
+            this (noise). Rate analysis uses 20 deg/s; angle analysis must use
+            a few degrees or typical 5–15 deg attitude steps are discarded and
+            the plot is a flat zero line.
         """
 
         # equally space samples in time
@@ -77,8 +83,14 @@ class Trace:
         self.stacks = self.winstacker({'time':[],'input':[],'gyro':[], 'throttle':[]}, self.flen, Trace.superpos)                                  # [[time, input, output],]
         self.window = np.hanning(self.flen)                                     #self.tukeywin(self.flen, self.tuk_alpha)
         self.spec_sm, self.avr_t, self.avr_in, self.max_in, self.max_thr = self.stack_response(self.stacks, self.window)
-        self.low_mask, self.high_mask = self.low_high_mask(self.max_in, self.threshold)       #calcs masks for high and low inputs according to threshold
-        self.toolow_mask = self.low_high_mask(self.max_in, 20)[1]          #mask for ignoring noisy low input
+        if high_input_threshold is None:
+            high_input_threshold = Trace.threshold
+        if min_input_threshold is None:
+            min_input_threshold = 20.
+        self.high_input_threshold = high_input_threshold
+        self.min_input_threshold = min_input_threshold
+        self.low_mask, self.high_mask = self.low_high_mask(self.max_in, high_input_threshold)       #calcs masks for high and low inputs according to threshold
+        self.toolow_mask = self.low_high_mask(self.max_in, min_input_threshold)[1]          #mask for ignoring noisy low input
 
 # commented, because it's unused
 #        self.resp_sm = self.weighted_mode_avr(self.spec_sm, self.toolow_mask, [-1.5,3.5], 1000)

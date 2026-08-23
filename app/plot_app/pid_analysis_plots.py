@@ -7,6 +7,8 @@ from scipy.interpolate import interp1d
 from config import plot_width, plot_config, colors3
 from helper import get_flight_mode_changes, ActuatorControls
 from pid_analysis import Trace, plot_pid_response
+from pid_step_data import ANGLE_HIGH_INPUT_DEG, ANGLE_MIN_INPUT_DEG, \
+    _attitude_axis_deg
 from plotting import *
 from plotted_tables import get_heading_html
 
@@ -200,15 +202,19 @@ The analysis may take a while...
         # PID response
         if not pid_analysis_error and has_attitude:
             try:
-                attitude_estimated = np.rad2deg(vehicle_attitude.data[axis])
+                attitude_estimated = _attitude_axis_deg(vehicle_attitude, axis)
+                setpoint_deg = _attitude_axis_deg(vehicle_attitude_setpoint, axis)
                 setpoint = _resample(vehicle_attitude_setpoint.data['timestamp'],
-                                     np.rad2deg(vehicle_attitude_setpoint.data[axis+'_d']),
-                                     attitude_time)
+                                     setpoint_deg, attitude_time)
                 # Cap memory usage on long, high-rate logs
                 t_s, attitude_estimated_d, setpoint_d, throttle_d = \
                     _decimate_to_budget(time_seconds, attitude_estimated,
                                         setpoint, throttle)
-                trace = Trace(axis, t_s, attitude_estimated_d, setpoint_d, throttle_d)
+                # Rate-loop thresholds (20 deg/s) would treat typical 5–15 deg
+                # attitude steps as noise and plot a flat zero line.
+                trace = Trace(axis, t_s, attitude_estimated_d, setpoint_d, throttle_d,
+                              high_input_threshold=ANGLE_HIGH_INPUT_DEG,
+                              min_input_threshold=ANGLE_MIN_INPUT_DEG)
                 plots.append(plot_pid_response(trace, ulog.data_list, plot_config,
                                                'Angle').bokeh_plot)
             except Exception as e:

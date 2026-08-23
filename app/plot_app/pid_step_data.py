@@ -32,18 +32,8 @@ def _decimate_to_budget(*arrays, max_samples=PID_MAX_SAMPLES):
     return tuple(a[::step] for a in arrays)
 
 
-def _attitude_axis_deg(dataset, axis):
-    """Return roll/pitch/yaw in degrees from Euler fields or quaternion."""
-    if axis in dataset.data:
-        return np.rad2deg(dataset.data[axis])
-
-    try:
-        qw = dataset.data['q[0]']
-        qx = dataset.data['q[1]']
-        qy = dataset.data['q[2]']
-        qz = dataset.data['q[3]']
-    except KeyError as exc:
-        raise KeyError(axis) from exc
+def _quat_axis_deg(qw, qx, qy, qz, axis):
+    """Euler angle in degrees from quaternion components."""
     if axis == 'roll':
         return np.rad2deg(np.arctan2(2.0 * (qw * qx + qy * qz),
                                      1.0 - 2.0 * (qx * qx + qy * qy)))
@@ -54,6 +44,35 @@ def _attitude_axis_deg(dataset, axis):
         return np.rad2deg(np.arctan2(2.0 * (qw * qz + qx * qy),
                                      1.0 - 2.0 * (qy * qy + qz * qz)))
     raise KeyError(axis)
+
+
+def _attitude_axis_deg(dataset, axis):
+    """Return roll/pitch/yaw in degrees from Euler fields or quaternion.
+
+    Handles vehicle_attitude (roll / q[]) and vehicle_attitude_setpoint
+    (roll_d / q_d[]) after or without px4_ulog.add_roll_pitch_yaw().
+    """
+    if axis in dataset.data:
+        return np.rad2deg(dataset.data[axis])
+    d_name = axis + '_d'
+    if d_name in dataset.data:
+        return np.rad2deg(dataset.data[d_name])
+    for prefix in ('q', 'q_d'):
+        try:
+            qw = dataset.data[prefix + '[0]']
+            qx = dataset.data[prefix + '[1]']
+            qy = dataset.data[prefix + '[2]']
+            qz = dataset.data[prefix + '[3]']
+        except KeyError:
+            continue
+        return _quat_axis_deg(qw, qx, qy, qz, axis)
+    raise KeyError(axis)
+
+
+# Angle-loop step response: the rate analyzer's 20 deg/s noise floor would
+# drop typical 5–15 deg attitude steps, leaving a flat zero plot.
+ANGLE_MIN_INPUT_DEG = 2.0
+ANGLE_HIGH_INPUT_DEG = 90.0
 
 
 def _downsample_pairs(time_s, values, max_points=80):
@@ -258,16 +277,14 @@ def collect_pid_step_responses(ulog):
     for index, axis in enumerate(['roll', 'pitch']):
         try:
             attitude_estimated = _attitude_axis_deg(vehicle_attitude, axis)
-            sp_field = axis + '_d'
-            if sp_field in vehicle_attitude_setpoint.data:
-                setpoint_deg = np.rad2deg(vehicle_attitude_setpoint.data[sp_field])
-            else:
-                setpoint_deg = _attitude_axis_deg(vehicle_attitude_setpoint, axis)
+            setpoint_deg = _attitude_axis_deg(vehicle_attitude_setpoint, axis)
             setpoint = _resample(vehicle_attitude_setpoint.data['timestamp'],
                                  setpoint_deg, attitude_time)
             t_s, att_d, setpoint_d, throttle_d = _decimate_to_budget(
                 att_time_s, attitude_estimated, setpoint, att_throttle)
-            trace = Trace(axis, t_s, att_d, setpoint_d, throttle_d)
+            trace = Trace(axis, t_s, att_d, setpoint_d, throttle_d,
+                          high_input_threshold=ANGLE_HIGH_INPUT_DEG,
+                          min_input_threshold=ANGLE_MIN_INPUT_DEG)
             result['responses'].append(_trace_to_payload(trace, axis, 'attitude'))
             result['has_attitude'] = True
         except Exception as error:  # pylint: disable=broad-except
