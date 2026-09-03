@@ -43,7 +43,7 @@ def _mark_gyro_filter_frequencies(data_plot, ulog):
             params['IMU_GYRO_NF_FREQ'], 'IMU_GYRO_NF_FREQ', 70)
 
 
-def _add_fifo_plots(ulog, data, plot_config, plots, x_range, changed_params,
+def _add_fifo_plots(ulog, data, plots, x_range, changed_params,
                     topic_name, y_axis_label, raw_title, spec_title, fft_title,
                     convert_rad2deg=False, plot_regularity=False):
     """Unroll sensor_*_fifo packets and plot raw traces, spectrogram, and FFT."""
@@ -107,7 +107,7 @@ def _add_fifo_plots(ulog, data, plot_config, plots, x_range, changed_params,
                 plots.append(data_plot)
 
 
-def _add_high_rate_raw_imu_plots(ulog, data, plot_config, plots, x_range,
+def _add_high_rate_raw_imu_plots(ulog, data, plots, x_range,
                                  changed_params, topic_name, y_axis_label,
                                  raw_title, spec_title, fft_title,
                                  convert_rad2deg=False):
@@ -913,24 +913,24 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
 
     # FIFO accel / gyro: unroll packed FIFO packets into a virtual high-rate topic
     _add_fifo_plots(
-        ulog, data, plot_config, plots, x_range, changed_params,
+        ulog, data, plots, x_range, changed_params,
         'sensor_accel_fifo', '[m/s^2]',
         'Raw Acceleration', 'Acceleration Power Spectral Density',
         'Raw Acceleration FFT', plot_regularity=True)
     _add_fifo_plots(
-        ulog, data, plot_config, plots, x_range, changed_params,
+        ulog, data, plots, x_range, changed_params,
         'sensor_gyro_fifo', '[deg/s]',
         'Raw Gyro', 'Gyro Power Spectral Density',
         'Raw Gyro FFT', convert_rad2deg=True)
 
     # High-rate raw IMU (sensor_accel / sensor_gyro) when logged without FIFO
     _add_high_rate_raw_imu_plots(
-        ulog, data, plot_config, plots, x_range, changed_params,
+        ulog, data, plots, x_range, changed_params,
         'sensor_accel', '[m/s^2]',
         'Raw Acceleration', 'Acceleration Power Spectral Density',
         'Raw Acceleration FFT')
     _add_high_rate_raw_imu_plots(
-        ulog, data, plot_config, plots, x_range, changed_params,
+        ulog, data, plots, x_range, changed_params,
         'sensor_gyro', '[deg/s]',
         'Raw Gyro', 'Gyro Power Spectral Density',
         'Raw Gyro FFT', convert_rad2deg=True)
