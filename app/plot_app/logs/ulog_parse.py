@@ -29,6 +29,7 @@ FIFO_TOPICS = ('sensor_accel_fifo', 'sensor_gyro_fifo')
 
 HIGH_RATE_TOPICS = FIFO_TOPICS + (
     'sensor_accel',
+    'sensor_gyro',
     'sensor_combined',
     'ekf2_timestamps',
     'vehicle_imu_status',
@@ -226,27 +227,20 @@ def _unique_filters(filters: Sequence[Sequence[str]]) -> List[List[str]]:
 
 
 def filters_for_file(file_name: str, full_filter: Sequence[str]) -> List[List[str]]:
-    """Return topic-filter attempts, dropping FIFO/high-rate topics as size grows."""
+    """Return topic-filter attempts, dropping FIFO/high-rate topics on retry.
+
+    Always try the full set first (including FIFO). SafeULog caps buffers;
+    MemoryError in parse_ulog walks this ladder. ``file_name`` is accepted so
+    callers can pass the log path (size-based skipping used to live here).
+    """
+    del file_name
     full = list(full_filter)
     no_fifo = [name for name in full if name not in FIFO_TOPICS]
     no_high_rate = [name for name in full if name not in HIGH_RATE_TOPICS]
     core = [name for name in full if name in CORE_TOPIC_SET]
     if not core:
         core = list(CORE_TOPICS)
-
-    try:
-        size = os.path.getsize(file_name)
-    except OSError:
-        size = 0
-
-    attempts: List[List[str]] = []
-    if size < LARGE_LOG_BYTES:
-        attempts.append(full)
-    if size < LARGE_LOG_BYTES * 2:
-        attempts.append(no_fifo)
-    attempts.append(no_high_rate)
-    attempts.append(core)
-    return _unique_filters(attempts)
+    return _unique_filters([full, no_fifo, no_high_rate, core])
 
 
 def parse_ulog(file_name: str, message_name_filter_list: Optional[Sequence[str]] = None):

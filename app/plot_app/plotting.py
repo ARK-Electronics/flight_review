@@ -51,6 +51,92 @@ def plot_dropouts(p, dropouts, min_value, show_hover_tooltips=False):
         p.add_tools(HoverTool(tooltips=[('dropout', '@duration ms')],
                               renderers=[quad]))
 
+FIFO_MAX_SAMPLES = 32
+MAX_UNROLLED_FIFO_SAMPLES = 2000000
+
+
+def _fifo_sample_counts(data):
+    """Per-packet valid sample counts (PX4 FIFO, 1-32)."""
+    n_packets = len(data['timestamp'])
+    if 'samples' in data:
+        return np.clip(data['samples'].astype(np.int64), 0, FIFO_MAX_SAMPLES)
+    n_max = 0
+    while 'x[{:d}]'.format(n_max) in data and n_max < FIFO_MAX_SAMPLES:
+        n_max += 1
+    if n_max <= 0:
+        raise KeyError('fifo has no x[i] sample fields')
+    return np.full(n_packets, n_max, dtype=np.int64)
+
+
+def _stride_fifo_packets(data, stride):
+    """Keep every Nth FIFO packet so unroll stays within the sample budget."""
+    if stride <= 1:
+        return data
+    n_packets = len(data['timestamp'])
+    out = {}
+    for key, value in data.items():
+        if getattr(value, 'shape', None) and value.shape[:1] == (n_packets,):
+            out[key] = value[::stride]
+        else:
+            out[key] = value
+    return out
+
+
+def unroll_fifo_arrays(data, max_samples=MAX_UNROLLED_FIFO_SAMPLES):
+    """Expand packed sensor_*_fifo packets into individual scaled samples.
+
+    Returns (timestamp_us, x, y, z) as 1-D float64 arrays. ``dt`` is treated as
+    microseconds (PX4 FIFO). Packets are strided if unrolling would exceed
+    ``max_samples``.
+    """
+    if 'timestamp_sample' in data:
+        timestamp = data['timestamp_sample'].astype(np.float64)
+    else:
+        timestamp = data['timestamp'].astype(np.float64)
+    dt_us = data['dt'].astype(np.float64)
+    scale = data['scale'].astype(np.float64)
+    n_per = _fifo_sample_counts(data)
+    n_packets = len(timestamp)
+    if n_packets == 0:
+        raise ValueError('fifo topic is empty')
+    n_max = int(n_per.max())
+    if n_max <= 0:
+        raise ValueError('fifo packets contain no samples')
+
+    estimated = n_packets * n_max
+    if estimated > max_samples:
+        stride = int(np.ceil(estimated / float(max_samples)))
+        data = _stride_fifo_packets(data, stride)
+        if 'timestamp_sample' in data:
+            timestamp = data['timestamp_sample'].astype(np.float64)
+        else:
+            timestamp = data['timestamp'].astype(np.float64)
+        dt_us = data['dt'].astype(np.float64)
+        scale = data['scale'].astype(np.float64)
+        n_per = _fifo_sample_counts(data)
+        n_packets = len(timestamp)
+        n_max = int(n_per.max()) if n_packets else 0
+        if n_max <= 0:
+            raise ValueError('fifo packets contain no samples')
+
+    sample_index = np.arange(n_max)
+    x_mat = np.column_stack(
+        [data['x[{:d}]'.format(idx)].astype(np.float64) for idx in sample_index])
+    y_mat = np.column_stack(
+        [data['y[{:d}]'.format(idx)].astype(np.float64) for idx in sample_index])
+    z_mat = np.column_stack(
+        [data['z[{:d}]'.format(idx)].astype(np.float64) for idx in sample_index])
+    x_mat *= scale[:, None]
+    y_mat *= scale[:, None]
+    z_mat *= scale[:, None]
+
+    # timestamp_sample is the last sample in the packet.
+    offsets = n_per[:, None] - 1 - sample_index[None, :]
+    time_mat = timestamp[:, None] - offsets * dt_us[:, None]
+    valid = sample_index[None, :] < n_per[:, None]
+    return time_mat[valid], x_mat[valid], y_mat[valid], z_mat[valid]
+
+
 def add_virtual_fifo_topic_data(ulog, topic_name, instance=0):
     """ adds a virtual topic by expanding the FIFO samples array into individual
         samples, so it can be used for normal plotting.
@@ -58,34 +144,21 @@ def add_virtual_fifo_topic_data(ulog, topic_name, instance=0):
         :return: True if topic data was added
     """
     try:
-        cur_dataset = copy.deepcopy(ulog.get_dataset(topic_name, instance))
-        cur_dataset.name = topic_name+'_virtual'
-        t = cur_dataset.data['timestamp_sample']
-        dt = cur_dataset.data['dt']
-        samples = cur_dataset.data['samples']
-        scale = cur_dataset.data['scale']
-        total_samples = 0
-        for i in range(len(t)):
-            total_samples += int(samples[i])
-        t_new = np.zeros(total_samples, t.dtype)
-        xyz_new = [np.zeros(total_samples, np.float64) for i in range(3)]
-        sample = 0
-        # TODO: this could be faster...
-        for i, _ in enumerate(t):
-            for s in range(samples[i]):
-                t_new[sample+s] = t[i]-(samples[i]-s-1)*dt[i]
-                for j, axis in enumerate(['x', 'y', 'z']):
-                    data_point = cur_dataset.data[axis+'['+str(s)+']'][i] * scale[i]
-                    xyz_new[j][sample+s] = data_point
-            sample += int(samples[i])
-        cur_dataset.data['timestamp'] = t_new
-        cur_dataset.data['timestamp_sample'] = t_new
-        cur_dataset.data['x'] = xyz_new[0]
-        cur_dataset.data['y'] = xyz_new[1]
-        cur_dataset.data['z'] = xyz_new[2]
-        ulog.data_list.append(cur_dataset)
+        src = ulog.get_dataset(topic_name, instance)
+        time_us, x_new, y_new, z_new = unroll_fifo_arrays(src.data)
+        virtual = copy.copy(src)
+        virtual.name = topic_name + '_virtual'
+        timestamp = np.rint(time_us).astype(np.uint64, copy=False)
+        virtual.data = {
+            'timestamp': timestamp,
+            'timestamp_sample': timestamp,
+            'x': x_new,
+            'y': y_new,
+            'z': z_new,
+        }
+        ulog.data_list.append(virtual)
         return True
-    except (KeyError, IndexError, ValueError) as error:
+    except (KeyError, IndexError, ValueError, MemoryError) as error:
         # log does not contain the value we are looking for
         if debug_verbose_output():
             print(type(error), "(fifo data):", error)
@@ -807,6 +880,47 @@ class DataPlot2D(DataPlot):
         self._move_legend_outside()
 
 
+MIN_FFT_SAMPLING_HZ = 100.0
+
+
+def median_sampling_frequency_hz(timestamps):
+    """Return the median sampling frequency in Hz.
+
+    Uses the median inter-sample interval so logging dropouts do not pull the
+    rate down. Returns 0 if the rate cannot be determined.
+    """
+    timestamps = np.asarray(timestamps)
+    if timestamps.size < 2:
+        return 0.0
+    delta_t = np.median(np.diff(timestamps.astype(np.float64))) * 1.0e-6
+    if delta_t <= 0.0 or not np.isfinite(delta_t):
+        return 0.0
+    return 1.0 / delta_t
+
+
+def dataset_sampling_frequency_hz(dataset):
+    """Sampling frequency of a pyulog dataset, preferring timestamp_sample."""
+    if dataset is None:
+        return 0.0
+    data = getattr(dataset, 'data', None)
+    if not data:
+        return 0.0
+    timestamp_key = 'timestamp_sample' if 'timestamp_sample' in data else 'timestamp'
+    if timestamp_key not in data:
+        return 0.0
+    return median_sampling_frequency_hz(data[timestamp_key])
+
+
+def ulog_dataset_is_high_rate(ulog, topic_name, instance=0,
+                              min_hz=MIN_FFT_SAMPLING_HZ):
+    """True if the topic instance is logged at or above min_hz."""
+    try:
+        dataset = ulog.get_dataset(topic_name, instance)
+    except Exception:  # pylint: disable=broad-except
+        return False
+    return dataset_sampling_frequency_hz(dataset) >= min_hz
+
+
 class DataPlotSpec(DataPlot):
     """
     A spectrogram plot.
@@ -848,27 +962,30 @@ class DataPlotSpec(DataPlot):
 
             # calculate the sampling frequency using the median inter-sample interval
             # to avoid bias from logging dropouts
-            dt_diff = np.diff(data_set[timestamp_key])
-            delta_t = np.median(dt_diff) * 1.0e-6
+            dt_diff = np.diff(data_set[timestamp_key].astype(np.float64))
+            sampling_frequency = median_sampling_frequency_hz(data_set[timestamp_key])
+            if sampling_frequency < MIN_FFT_SAMPLING_HZ:
+                self._had_error = True
+                return
+            delta_t = 1.0 / sampling_frequency
             mean_delta_t = np.mean(dt_diff) * 1.0e-6
-            if delta_t < 0.000001: # avoid division by zero
-                self._had_error = True
-                return
-
-            sampling_frequency = int(1.0 / delta_t)
-
-            if sampling_frequency < 100: # require min sampling freq
-                self._had_error = True
-                return
+            if mean_delta_t <= 0.0 or not np.isfinite(mean_delta_t):
+                mean_delta_t = delta_t
 
             field_names_expanded = self._expand_field_names(field_names, data_set)
+
+            nperseg = min(int(window_length), len(data_set[timestamp_key]))
+            if nperseg < 16:
+                self._had_error = True
+                return
+            noverlap = min(int(noverlap), nperseg // 2)
 
             # calculate the spectrogram
             psd = {}
             for key in field_names_expanded:
                 frequency, time, psd[key] = scipy.signal.spectrogram(
                     data_set[key], fs=sampling_frequency, window=window,
-                    nperseg=window_length, noverlap=noverlap, scaling='density')
+                    nperseg=nperseg, noverlap=noverlap, scaling='density')
 
             # sum all psd's
             key_it = iter(psd)
@@ -968,12 +1085,11 @@ class DataPlotFFT(DataPlot):
 
             # calculate the sampling frequency using the median inter-sample interval
             # to avoid bias from logging dropouts
-            delta_t = np.median(np.diff(data_set[timestamp_key])) * 1.0e-6
-            sampling_frequency = 1.0 / delta_t
-
-            if sampling_frequency < 100 or sampling_frequency == float("inf"): # require min sampling freq
+            sampling_frequency = median_sampling_frequency_hz(data_set[timestamp_key])
+            if sampling_frequency < MIN_FFT_SAMPLING_HZ:
                 self._had_error = True
                 return
+            delta_t = 1.0 / sampling_frequency
 
             field_names_expanded = self._expand_field_names(field_names, data_set)
 

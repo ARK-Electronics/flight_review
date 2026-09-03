@@ -3,6 +3,8 @@
 import re
 from html import escape
 
+import numpy as np
+
 from bokeh.layouts import column
 from bokeh.models import Range1d
 from bokeh.models.widgets import Button
@@ -23,6 +25,130 @@ from vtol_tailsitter import *
 #pylint: disable=cell-var-from-loop, undefined-loop-variable,
 #pylint: disable=consider-using-enumerate,too-many-statements
 #pylint: disable=too-many-lines,line-too-long
+
+
+def _mark_gyro_filter_frequencies(data_plot, ulog):
+    """Mark IMU gyro filter parameters on an FFT plot when present."""
+    if data_plot.had_error:
+        return
+    params = ulog.initial_parameters
+    if 'IMU_GYRO_CUTOFF' in params:
+        data_plot.mark_frequency(
+            params['IMU_GYRO_CUTOFF'], 'IMU_GYRO_CUTOFF', 20)
+    if 'IMU_DGYRO_CUTOFF' in params:
+        data_plot.mark_frequency(
+            params['IMU_DGYRO_CUTOFF'], 'IMU_DGYRO_CUTOFF')
+    if params.get('IMU_GYRO_NF_FREQ', 0) > 0:
+        data_plot.mark_frequency(
+            params['IMU_GYRO_NF_FREQ'], 'IMU_GYRO_NF_FREQ', 70)
+
+
+def _add_fifo_plots(ulog, data, plot_config, plots, x_range, changed_params,
+                    topic_name, y_axis_label, raw_title, spec_title, fft_title,
+                    convert_rad2deg=False, plot_regularity=False):
+    """Unroll sensor_*_fifo packets and plot raw traces, spectrogram, and FFT."""
+    for instance in range(4):
+        if not add_virtual_fifo_topic_data(ulog, topic_name, instance):
+            continue
+        virtual_name = topic_name + '_virtual'
+        title_suffix = f' (FIFO, IMU{instance})'
+        data_plot = DataPlot(data, plot_config, virtual_name,
+                             y_axis_label=y_axis_label,
+                             title=raw_title + title_suffix,
+                             plot_height='small', changed_params=changed_params,
+                             x_range=x_range, topic_instance=instance)
+        if convert_rad2deg:
+            data_plot.add_graph([
+                lambda dataset: ('x', np.rad2deg(dataset['x'])),
+                lambda dataset: ('y', np.rad2deg(dataset['y'])),
+                lambda dataset: ('z', np.rad2deg(dataset['z']))],
+                                colors3, ['X', 'Y', 'Z'])
+        else:
+            data_plot.add_graph(['x', 'y', 'z'], colors3, ['X', 'Y', 'Z'])
+        if data_plot.finalize() is not None:
+            plots.append(data_plot)
+
+        data_plot = DataPlotSpec(data, plot_config, virtual_name,
+                                 y_axis_label='[Hz]',
+                                 title=spec_title + title_suffix,
+                                 plot_height='normal', x_range=x_range,
+                                 topic_instance=instance)
+        data_plot.add_graph(['x', 'y', 'z'], ['X', 'Y', 'Z'])
+        if data_plot.finalize() is not None:
+            plots.append(data_plot)
+
+        data_plot = DataPlotFFT(data, plot_config, virtual_name,
+                                title=fft_title + title_suffix,
+                                topic_instance=instance)
+        data_plot.add_graph(['x', 'y', 'z'], colors3, ['X', 'Y', 'Z'])
+        if convert_rad2deg:
+            _mark_gyro_filter_frequencies(data_plot, ulog)
+        if data_plot.finalize() is not None:
+            plots.append(data_plot)
+
+        if plot_regularity:
+            data_plot = DataPlot(data, plot_config, topic_name,
+                                 y_range=Range1d(0, 25e3),
+                                 y_axis_label='[us]',
+                                 title=('Sampling Regularity of Sensor Data' +
+                                        title_suffix),
+                                 plot_height='small',
+                                 changed_params=changed_params,
+                                 x_range=x_range, topic_instance=instance)
+            fifo_data = ulog.get_dataset(topic_name, instance).data
+            sampling_diff = np.diff(fifo_data['timestamp'])
+            min_sampling_diff = np.amin(sampling_diff) if len(sampling_diff) else 0
+            plot_dropouts(data_plot.bokeh_plot, ulog.dropouts, min_sampling_diff)
+            data_plot.add_graph(
+                [lambda dataset, diff=sampling_diff: (
+                    'timediff', np.append(diff, 0))],
+                [colors3[2]], ['delta t (between 2 logged samples)'])
+            if data_plot.finalize() is not None:
+                plots.append(data_plot)
+
+
+def _add_high_rate_raw_imu_plots(ulog, data, plot_config, plots, x_range,
+                                 changed_params, topic_name, y_axis_label,
+                                 raw_title, spec_title, fft_title,
+                                 convert_rad2deg=False):
+    """Add raw, spectrogram, and FFT plots for high-rate sensor_gyro/sensor_accel."""
+    for instance in range(4):
+        if not ulog_dataset_is_high_rate(ulog, topic_name, instance):
+            continue
+        title_suffix = f' (IMU{instance})'
+        data_plot = DataPlot(data, plot_config, topic_name,
+                             y_axis_label=y_axis_label,
+                             title=raw_title + title_suffix,
+                             plot_height='small', changed_params=changed_params,
+                             x_range=x_range, topic_instance=instance)
+        if convert_rad2deg:
+            data_plot.add_graph([
+                lambda dataset: ('x', np.rad2deg(dataset['x'])),
+                lambda dataset: ('y', np.rad2deg(dataset['y'])),
+                lambda dataset: ('z', np.rad2deg(dataset['z']))],
+                                colors3, ['X', 'Y', 'Z'])
+        else:
+            data_plot.add_graph(['x', 'y', 'z'], colors3, ['X', 'Y', 'Z'])
+        if data_plot.finalize() is not None:
+            plots.append(data_plot)
+
+        data_plot = DataPlotSpec(data, plot_config, topic_name,
+                                 y_axis_label='[Hz]',
+                                 title=spec_title + title_suffix,
+                                 plot_height='normal', x_range=x_range,
+                                 topic_instance=instance)
+        data_plot.add_graph(['x', 'y', 'z'], ['X', 'Y', 'Z'])
+        if data_plot.finalize() is not None:
+            plots.append(data_plot)
+
+        data_plot = DataPlotFFT(data, plot_config, topic_name,
+                                title=fft_title + title_suffix,
+                                topic_instance=instance)
+        data_plot.add_graph(['x', 'y', 'z'], colors3, ['X', 'Y', 'Z'])
+        if convert_rad2deg:
+            _mark_gyro_filter_frequencies(data_plot, ulog)
+        if data_plot.finalize() is not None:
+            plots.append(data_plot)
 
 
 
@@ -727,6 +853,29 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
                         ['X', 'Y', 'Z'])
     if data_plot.finalize() is not None: plots.append(data_plot)
 
+    # Gyro Spectrogram (sensor_combined is logged at IMU rate even without FIFO)
+    data_plot = DataPlotSpec(data, plot_config, 'sensor_combined',
+                             y_axis_label='[Hz]', title='Gyro Power Spectral Density',
+                             plot_height='small', x_range=x_range)
+    data_plot.add_graph(['gyro_rad[0]', 'gyro_rad[1]', 'gyro_rad[2]'],
+                        ['X', 'Y', 'Z'])
+    if data_plot.finalize() is not None: plots.append(data_plot)
+
+    # Raw gyro/accel FFT from sensor_combined (shown when rate >= 100 Hz)
+    data_plot = DataPlotFFT(data, plot_config, 'sensor_combined',
+                            title='Raw Gyro FFT')
+    data_plot.add_graph(['gyro_rad[0]', 'gyro_rad[1]', 'gyro_rad[2]'],
+                        colors3, ['X', 'Y', 'Z'])
+    _mark_gyro_filter_frequencies(data_plot, ulog)
+    if data_plot.finalize() is not None: plots.append(data_plot)
+
+    data_plot = DataPlotFFT(data, plot_config, 'sensor_combined',
+                            title='Raw Acceleration FFT')
+    data_plot.add_graph(['accelerometer_m_s2[0]', 'accelerometer_m_s2[1]',
+                         'accelerometer_m_s2[2]'],
+                        colors3, ['X', 'Y', 'Z'])
+    if data_plot.finalize() is not None: plots.append(data_plot)
+
 
     # Filtered Gyro (angular velocity) Spectrogram
     data_plot = DataPlotSpec(data, plot_config, 'vehicle_angular_velocity',
@@ -762,66 +911,29 @@ def generate_plots(ulog, px4_ulog, db_data, vehicle_data, link_to_3d_page,
     plot_flight_modes_background(data_plot, flight_mode_changes, vtol_states)
     if data_plot.finalize() is not None: plots.append(data_plot)
 
-    # FIFO accel
-    for instance in range(3):
-        if add_virtual_fifo_topic_data(ulog, 'sensor_accel_fifo', instance):
-            # Raw data
-            data_plot = DataPlot(data, plot_config, 'sensor_accel_fifo_virtual',
-                                 y_axis_label='[m/s^2]',
-                                 title=f'Raw Acceleration (FIFO, IMU{instance})',
-                                 plot_height='small', changed_params=changed_params,
-                                 x_range=x_range, topic_instance=instance)
-            data_plot.add_graph(['x', 'y', 'z'], colors3, ['X', 'Y', 'Z'])
-            if data_plot.finalize() is not None: plots.append(data_plot)
+    # FIFO accel / gyro: unroll packed FIFO packets into a virtual high-rate topic
+    _add_fifo_plots(
+        ulog, data, plot_config, plots, x_range, changed_params,
+        'sensor_accel_fifo', '[m/s^2]',
+        'Raw Acceleration', 'Acceleration Power Spectral Density',
+        'Raw Acceleration FFT', plot_regularity=True)
+    _add_fifo_plots(
+        ulog, data, plot_config, plots, x_range, changed_params,
+        'sensor_gyro_fifo', '[deg/s]',
+        'Raw Gyro', 'Gyro Power Spectral Density',
+        'Raw Gyro FFT', convert_rad2deg=True)
 
-            # power spectral density
-            data_plot = DataPlotSpec(data, plot_config, 'sensor_accel_fifo_virtual',
-                                     y_axis_label='[Hz]',
-                                     title=(f'Acceleration Power Spectral Density'
-                                            f'(FIFO, IMU{instance})'),
-                                     plot_height='normal', x_range=x_range, topic_instance=instance)
-            data_plot.add_graph(['x', 'y', 'z'], ['X', 'Y', 'Z'])
-            if data_plot.finalize() is not None: plots.append(data_plot)
-
-            # sampling regularity
-            data_plot = DataPlot(data, plot_config, 'sensor_accel_fifo', y_range=Range1d(0, 25e3),
-                                 y_axis_label='[us]',
-                                 title=f'Sampling Regularity of Sensor Data (FIFO, IMU{instance})',
-                                 plot_height='small',
-                                 changed_params=changed_params,
-                                 x_range=x_range, topic_instance=instance)
-            sensor_accel_fifo = ulog.get_dataset('sensor_accel_fifo').data
-            sampling_diff = np.diff(sensor_accel_fifo['timestamp'])
-            min_sampling_diff = np.amin(sampling_diff)
-            plot_dropouts(data_plot.bokeh_plot, ulog.dropouts, min_sampling_diff)
-            data_plot.add_graph([lambda data: ('timediff', np.append(sampling_diff, 0))],
-                                [colors3[2]], ['delta t (between 2 logged samples)'])
-            if data_plot.finalize() is not None: plots.append(data_plot)
-
-    # FIFO gyro
-    for instance in range(3):
-        if add_virtual_fifo_topic_data(ulog, 'sensor_gyro_fifo', instance):
-            # Raw data
-            data_plot = DataPlot(data, plot_config, 'sensor_gyro_fifo_virtual',
-                                 y_axis_label='[deg/s]', title=f'Raw Gyro (FIFO, IMU{instance})',
-                                 plot_height='small', changed_params=changed_params,
-                                 x_range=x_range, topic_instance=instance)
-            data_plot.add_graph(['x', 'y', 'z'], colors3, ['X', 'Y', 'Z'])
-            data_plot.add_graph([
-                lambda data: ('x', np.rad2deg(data['x'])),
-                lambda data: ('y', np.rad2deg(data['y'])),
-                lambda data: ('z', np.rad2deg(data['z']))],
-                                colors3, ['X', 'Y', 'Z'])
-            if data_plot.finalize() is not None: plots.append(data_plot)
-
-            # power spectral density
-            data_plot = DataPlotSpec(data, plot_config, 'sensor_gyro_fifo_virtual',
-                                     y_axis_label='[Hz]',
-                                     title=f'Gyro Power Spectral Density (FIFO, IMU{instance})',
-                                     plot_height='normal', x_range=x_range, topic_instance=instance)
-            data_plot.add_graph(['x', 'y', 'z'], ['X', 'Y', 'Z'])
-            if data_plot.finalize() is not None: plots.append(data_plot)
-
+    # High-rate raw IMU (sensor_accel / sensor_gyro) when logged without FIFO
+    _add_high_rate_raw_imu_plots(
+        ulog, data, plot_config, plots, x_range, changed_params,
+        'sensor_accel', '[m/s^2]',
+        'Raw Acceleration', 'Acceleration Power Spectral Density',
+        'Raw Acceleration FFT')
+    _add_high_rate_raw_imu_plots(
+        ulog, data, plot_config, plots, x_range, changed_params,
+        'sensor_gyro', '[deg/s]',
+        'Raw Gyro', 'Gyro Power Spectral Density',
+        'Raw Gyro FFT', convert_rad2deg=True)
 
     # magnetic field strength
     data_plot = DataPlot(data, plot_config, magnetometer_ga_topic,

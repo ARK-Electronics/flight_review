@@ -181,14 +181,15 @@ class UlogParseTests(unittest.TestCase):
             self.assertEqual(ulog.initial_parameters.get('SYS_AUTOSTART'), 4001)
             self.assertEqual(ulog.data_list, [])
 
-    def test_filters_for_large_file_skip_full_set(self):
+    def test_filters_for_large_file_still_try_fifo(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, 'big.ulg')
             write_synthetic_ulog(path, n_status=1)
             os.truncate(path, ulog_parse.LARGE_LOG_BYTES + 10)
             filters = ulog_parse.filters_for_file(
                 path, ['vehicle_status', 'sensor_gyro_fifo', 'sensor_accel'])
-            self.assertTrue(all('sensor_gyro_fifo' not in f for f in filters))
+            self.assertIn('sensor_gyro_fifo', filters[0])
+            self.assertTrue(any('sensor_gyro_fifo' not in f for f in filters[1:]))
 
     def test_plain_ulog_still_parses_uncapped(self):
         """Sanity: stock pyulog accepts the synthetic file too."""
