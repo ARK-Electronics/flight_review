@@ -140,7 +140,7 @@ class PIDAIAnalysisAPIHandler(TornadoRequestHandlerBase):
     @tornado.gen.coroutine
     def post(self, *args, **kwargs):
         """POST request - run PID step-response tuning analysis."""
-        log_id, api_key, model = _begin_analysis_request(self)
+        log_id, api_key, model, effort = _begin_analysis_request(self)
         if not log_id:
             return
 
@@ -160,7 +160,8 @@ class PIDAIAnalysisAPIHandler(TornadoRequestHandlerBase):
                 step_data, parameters, flight_summary)
 
             ok, payload, status = yield _call_grok(
-                api_key, model, PID_TUNING_SYSTEM_PROMPT, user_prompt)
+                api_key, model, PID_TUNING_SYSTEM_PROMPT, user_prompt,
+                effort=effort)
             if ok:
                 loops = []
                 for item in step_data.get('responses', []):

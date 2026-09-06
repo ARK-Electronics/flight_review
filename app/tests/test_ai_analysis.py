@@ -41,6 +41,7 @@ except ImportError:
         sys.modules.setdefault(_name, _mod)
 
 from tornado_handlers import ai_analysis  # noqa: E402  pylint: disable=wrong-import-position
+from tornado_handlers import ai_chat  # noqa: E402  pylint: disable=wrong-import-position
 
 
 def _run(coro_fn):
@@ -115,6 +116,126 @@ class CallGrokTimeoutTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(status, 502)
         self.assertIn('xAI API error', payload)
+
+    def test_grok_46_sends_selected_reasoning_effort(self):
+        captured = {}
+
+        class FakeClient:
+            def fetch(self, request, raise_error=False):
+                captured['body'] = json.loads(request.body)
+                body = json.dumps({
+                    'choices': [{'message': {'content': 'ok'}}]
+                }).encode('utf-8')
+                return _future_result(type('Resp', (), {'code': 200, 'body': body})())
+
+        with mock.patch.object(ai_analysis, 'AsyncHTTPClient', return_value=FakeClient()):
+            ok, payload, status = _run(
+                lambda: ai_analysis._call_grok(
+                    'key', 'grok-4.6', 'sys', 'user', effort='low'))
+
+        self.assertTrue(ok)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload['effort'], 'low')
+        self.assertEqual(captured['body']['reasoning'], {'effort': 'low'})
+
+    def test_grok_build_omits_reasoning_effort(self):
+        captured = {}
+
+        class FakeClient:
+            def fetch(self, request, raise_error=False):
+                captured['body'] = json.loads(request.body)
+                body = json.dumps({
+                    'choices': [{'message': {'content': 'ok'}}]
+                }).encode('utf-8')
+                return _future_result(type('Resp', (), {'code': 200, 'body': body})())
+
+        with mock.patch.object(ai_analysis, 'AsyncHTTPClient', return_value=FakeClient()):
+            _run(lambda: ai_analysis._call_grok(
+                'key', 'grok-build', 'sys', 'user', effort='high'))
+
+        self.assertNotIn('reasoning', captured['body'])
+
+    def test_extra_messages_are_sent_after_system(self):
+        captured = {}
+
+        class FakeClient:
+            def fetch(self, request, raise_error=False):
+                captured['body'] = json.loads(request.body)
+                body = json.dumps({
+                    'choices': [{'message': {'content': 'reply'}}]
+                }).encode('utf-8')
+                return _future_result(type('Resp', (), {'code': 200, 'body': body})())
+
+        extra = [
+            {'role': 'user', 'content': 'log context'},
+            {'role': 'assistant', 'content': 'ack'},
+            {'role': 'user', 'content': 'why did it crash?'},
+        ]
+        with mock.patch.object(ai_analysis, 'AsyncHTTPClient', return_value=FakeClient()):
+            ok, payload, _status = _run(
+                lambda: ai_analysis._call_grok(
+                    'key', 'grok-4.6', 'sys', extra_messages=extra, effort='medium'))
+
+        self.assertTrue(ok)
+        self.assertEqual(payload['analysis'], 'reply')
+        roles = [m['role'] for m in captured['body']['messages']]
+        self.assertEqual(roles, ['system', 'user', 'assistant', 'user'])
+        self.assertEqual(captured['body']['messages'][-1]['content'], 'why did it crash?')
+
+
+class ModelAndEffortTests(unittest.TestCase):
+    def test_default_model_is_newest_flagship(self):
+        newest = ai_analysis.pick_newest_grok_model([
+            'grok-build',
+            'grok-4-fast',
+            'grok-4.5',
+            'grok-4.6',
+            'grok-3',
+        ])
+        self.assertEqual(newest, 'grok-4.6')
+
+    def test_default_skips_grok_build_and_imagine(self):
+        newest = ai_analysis.pick_newest_grok_model([
+            'grok-build',
+            'grok-imagine-image',
+            'grok-4.5',
+        ])
+        self.assertEqual(newest, 'grok-4.5')
+
+    def test_sanitize_effort_defaults_to_medium(self):
+        self.assertEqual(ai_analysis._sanitize_effort(None), 'medium')
+        self.assertEqual(ai_analysis._sanitize_effort('nope'), 'medium')
+        self.assertEqual(ai_analysis._sanitize_effort('HIGH'), 'high')
+        self.assertEqual(ai_analysis._sanitize_effort('xhigh'), 'xhigh')
+
+    def test_supports_reasoning_effort(self):
+        self.assertTrue(ai_analysis._supports_reasoning_effort('grok-4.6'))
+        self.assertTrue(ai_analysis._supports_reasoning_effort('grok-4.5'))
+        self.assertTrue(ai_analysis._supports_reasoning_effort('grok-4-latest'))
+        self.assertTrue(ai_analysis._supports_reasoning_effort('grok-4-fast'))
+        self.assertFalse(ai_analysis._supports_reasoning_effort('grok-build'))
+        self.assertFalse(ai_analysis._supports_reasoning_effort('grok-imagine-image'))
+
+    def test_sanitize_chat_messages_drops_system_and_empty(self):
+        cleaned = ai_chat._sanitize_chat_messages([
+            {'role': 'system', 'content': 'ignore me'},
+            {'role': 'user', 'content': '  hello  '},
+            {'role': 'assistant', 'content': 'hi'},
+            {'role': 'user', 'content': ''},
+            'nope',
+            {'role': 'user', 'content': 123},
+        ])
+        self.assertEqual(cleaned, [
+            {'role': 'user', 'content': 'hello'},
+            {'role': 'assistant', 'content': 'hi'},
+        ])
+
+    def test_chat_prompt_is_not_a_full_report_request(self):
+        prompt = ai_analysis._build_analysis_prompt(
+            {'duration_s': 12, 'mav_type': 'Quadrotor'},
+            {}, {}, {}, {}, [], for_chat=True)
+        self.assertIn('Flight Log Context', prompt)
+        self.assertNotIn('Overall Flight Safety Rating', prompt)
 
 
 if __name__ == '__main__':

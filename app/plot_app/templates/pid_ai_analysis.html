@@ -29,6 +29,15 @@
                 style="width:auto; min-width:220px;">
             <option value="{{ default_model }}">{{ default_model }}</option>
         </select>
+        <label for="pid-ai-effort-select" class="form-label mb-0">Effort:</label>
+        <select id="pid-ai-effort-select" class="form-select form-select-sm"
+                style="width:auto; min-width:180px;"
+                title="Reasoning effort. Medium is recommended for log analysis.">
+            <option value="low">low — faster</option>
+            <option value="medium" selected>medium — recommended</option>
+            <option value="high">high — deeper</option>
+            <option value="xhigh">xhigh — maximum</option>
+        </select>
         <button id="pid-ai-run-btn" class="btn btn-primary btn-sm" type="button">
             <i class="fa-solid fa-play"></i> Analyze Step Responses
         </button>
@@ -51,10 +60,12 @@
 (function () {
     const LOG_ID = "{{ log_id }}";
     const DEFAULT_MODEL = "{{ default_model }}";
+    const DEFAULT_EFFORT = "medium";
     const output = document.getElementById('pid-ai-output');
     const runBtn = document.getElementById('pid-ai-run-btn');
     const rerunBtn = document.getElementById('pid-ai-rerun-btn');
     const modelSelect = document.getElementById('pid-ai-model-select');
+    const effortSelect = document.getElementById('pid-ai-effort-select');
 
     function setBusy(busy) {
         if (runBtn) runBtn.disabled = busy;
@@ -98,6 +109,7 @@
             if (ds.has_rate) html += '<span>Rate loop</span>';
             if (ds.has_attitude) html += '<span>Attitude loop</span>';
             if (data.model) html += `<span class="pid-ai-model">${data.model}</span>`;
+            if (data.effort) html += `<span>${data.effort}</span>`;
             if (data.cached) html += '<span class="pid-ai-cached">Cached</span>';
             html += '</div>';
         }
@@ -117,7 +129,10 @@
         fetch('/ai_analysis/pid?log=' + encodeURIComponent(LOG_ID), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: modelSelect ? modelSelect.value : DEFAULT_MODEL }),
+            body: JSON.stringify({
+                model: modelSelect ? modelSelect.value : DEFAULT_MODEL,
+                effort: effortSelect ? effortSelect.value : DEFAULT_EFFORT,
+            }),
         })
         .then(response => response.json().then(body => ({status: response.status, body})))
         .then(({status, body}) => {
@@ -145,7 +160,7 @@
             data.models.forEach(mid => {
                 const opt = document.createElement('option');
                 opt.value = mid;
-                opt.textContent = mid;
+                opt.textContent = mid === preferred ? mid + ' (newest)' : mid;
                 if (mid === preferred) {
                     opt.selected = true;
                     found = true;
@@ -155,11 +170,14 @@
             if (!found && preferred) {
                 const opt = document.createElement('option');
                 opt.value = preferred;
-                opt.textContent = preferred;
+                opt.textContent = preferred + ' (newest)';
                 opt.selected = true;
                 modelSelect.insertBefore(opt, modelSelect.firstChild);
             }
             modelSelect.value = preferred;
+            if (effortSelect && data.default_effort) {
+                effortSelect.value = data.default_effort;
+            }
         })
         .catch(() => {});
 

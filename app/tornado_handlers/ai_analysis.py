@@ -38,6 +38,11 @@ _FALLBACK_GROK_MODEL = 'grok-4.6'
 _GROK_REQUEST_TIMEOUT_SECONDS = 3600
 _GROK_CONNECT_TIMEOUT_SECONDS = 30
 
+# Interactive analysis/chat defaults to medium (xAI: complex data analysis).
+# Users can raise this to high/xhigh from the UI.
+_ALLOWED_EFFORTS = ('low', 'medium', 'high', 'xhigh')
+_DEFAULT_EFFORT = 'medium'
+
 # AI analysis cache directory
 _AI_CACHE_DIR = os.path.join(get_cache_filepath(), 'ai_analysis')
 os.makedirs(_AI_CACHE_DIR, exist_ok=True)
@@ -64,7 +69,7 @@ def _grok_model_sort_key(model_id):
     mid = (model_id or '').lower().strip()
     match = re.match(r'^grok-(\d+)(?:\.(\d+))?(-.*)?$', mid)
     if not match:
-        return (0, 0, 0, mid)
+        return (0, 0, 0, 0, mid)
     major = int(match.group(1))
     minor = int(match.group(2) or 0)
     suffix = match.group(3) or ''
@@ -177,18 +182,39 @@ confident recommendation, say so explicitly.
 """
 
 
-def _parse_requested_model(handler):
-    """Read an optional model override from the JSON request body."""
-    model = _default_analysis_model()
+def _request_json(handler):
+    """Parse the JSON object body, or return {}."""
     try:
         body_args = handler.request.body
         if body_args:
             parsed = json.loads(body_args)
-            if isinstance(parsed, dict) and parsed.get('model'):
-                model = _sanitize_model_id(parsed.get('model'), fallback=model)
+            if isinstance(parsed, dict):
+                return parsed
     except (ValueError, json.JSONDecodeError, TypeError):
         pass
-    return model
+    return {}
+
+
+def _sanitize_effort(candidate, fallback=None):
+    """Return a valid reasoning effort, or the default."""
+    if fallback is None:
+        fallback = _DEFAULT_EFFORT
+    if not candidate:
+        return fallback
+    value = str(candidate).strip().lower()
+    if value in _ALLOWED_EFFORTS:
+        return value
+    return fallback
+
+
+def _parse_request_options(handler):
+    """Read model and reasoning effort from the JSON request body."""
+    parsed = _request_json(handler)
+    model = _default_analysis_model()
+    if parsed.get('model'):
+        model = _sanitize_model_id(parsed.get('model'), fallback=model)
+    effort = _sanitize_effort(parsed.get('effort'))
+    return model, effort
 
 
 def _json_error(handler, status, message):
@@ -240,14 +266,15 @@ def _load_ulog_for_analysis(log_id):
 
 
 def _begin_analysis_request(handler):
-    """Validate log id and API key. Returns (log_id, api_key, model) or Nones."""
+    """Validate log id and API key. Returns (log_id, api_key, model, effort)."""
     log_id = _checked_log_id(handler)
     if not log_id:
-        return None, None, None
+        return None, None, None, None
     api_key = _require_api_key(handler)
     if not api_key:
-        return None, None, None
-    return log_id, api_key, _parse_requested_model(handler)
+        return None, None, None, None
+    model, effort = _parse_request_options(handler)
+    return log_id, api_key, model, effort
 
 
 def _write_analysis_success(handler, payload, data_summary, log_id, kind='full'):
@@ -256,6 +283,7 @@ def _write_analysis_success(handler, payload, data_summary, log_id, kind='full')
         'analysis': payload['analysis'],
         'reasoning': payload['reasoning'],
         'model': payload['model'],
+        'effort': payload.get('effort'),
         'data_summary': data_summary,
     }
     _save_cached_analysis(log_id, response_data, kind=kind)
@@ -263,26 +291,46 @@ def _write_analysis_success(handler, payload, data_summary, log_id, kind='full')
     handler.write(json.dumps(response_data))
 
 
-def _is_reasoning_model(model):
-    """Whether to request high reasoning effort for this model id."""
-    lower = (model or '').lower()
-    return 'fast' in lower and ('grok-3' in lower or 'grok-4' in lower)
+def _supports_reasoning_effort(model):
+    """Whether this model accepts the chat-completions reasoning.effort field."""
+    lower = (model or '').lower().strip()
+    if not lower.startswith('grok-'):
+        return False
+    skipped = ('imagine', 'voice', 'tts', 'image', 'video', 'grok-build',
+               'non-reasoning')
+    if any(skip in lower for skip in skipped):
+        return False
+    if (('fast' in lower and ('grok-3' in lower or 'grok-4' in lower))
+            or 'reasoning' in lower or re.match(r'^grok-4\.20', lower)):
+        return True
+    match = re.match(r'^grok-(\d+)(?:\.(\d+))?(-latest)?$', lower)
+    if not match:
+        return False
+    major = int(match.group(1))
+    minor = int(match.group(2) or 0)
+    # grok-4.5+ flagships (and later majors) always reason.
+    return major > 4 or (major == 4 and minor >= 5) or bool(match.group(3))
 
 
 @tornado.gen.coroutine
-def _call_grok(api_key, model, system_prompt, user_prompt):
+def _call_grok(api_key, model, system_prompt, user_prompt=None, effort=None,
+               extra_messages=None):
     """Call the xAI chat completions API. Returns (ok, payload_or_error, http_status)."""
+    messages = [{'role': 'system', 'content': system_prompt}]
+    if extra_messages:
+        messages.extend(extra_messages)
+    elif user_prompt:
+        messages.append({'role': 'user', 'content': user_prompt})
+
+    effort = _sanitize_effort(effort)
     request_body = {
         'model': model,
-        'messages': [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': user_prompt},
-        ],
+        'messages': messages,
         'temperature': 0.3,
         'max_tokens': 4096,
     }
-    if _is_reasoning_model(model):
-        request_body['reasoning'] = {'effort': 'high'}
+    if _supports_reasoning_effort(model):
+        request_body['reasoning'] = {'effort': effort}
 
     http_client = AsyncHTTPClient()
     request = HTTPRequest(
@@ -318,6 +366,7 @@ def _call_grok(api_key, model, system_prompt, user_prompt):
             'analysis': ai_response,
             'reasoning': reasoning,
             'model': model,
+            'effort': effort,
         }, 200))
 
     error_msg = 'xAI API error (HTTP {})'.format(response.code)
@@ -797,16 +846,37 @@ def _extract_logged_messages(ulog, max_messages=50):
     return messages
 
 
+def _extracted_flight_data(log_id):
+    """Load a log and extract the fields used for Grok prompts."""
+    ulog, px4_ulog = _load_ulog_for_analysis(log_id)
+    return {
+        'flight_summary': _extract_flight_summary(ulog, px4_ulog),
+        'pid_data': _extract_pid_data(ulog),
+        'ekf_data': _extract_ekf_data(ulog),
+        'vehicle_status': _extract_vehicle_status(ulog),
+        'parameters': _extract_parameters(ulog),
+        'logged_messages': _extract_logged_messages(ulog),
+        'motor_failure': _detect_motor_failure(ulog),
+    }
+
+
 def _build_analysis_prompt(flight_summary, pid_data, ekf_data, vehicle_status,
-                           parameters, logged_messages, motor_failure=None):
+                           parameters, logged_messages, motor_failure=None,
+                           for_chat=False):
     """Build the user prompt with extracted flight data."""
 
-    prompt = "# Flight Log Analysis Request\n\n"
-    prompt += "Please analyze this PX4 flight log data and provide:\n"
-    prompt += "1. **Failure Detection**: Any anomalies, sensor failures, or estimation problems\n"
-    prompt += "2. **PID Tuning Assessment**: Rate and attitude controller performance with specific improvement recommendations\n"
-    prompt += "3. **EKF Parameter Tuning**: Filter health assessment with specific EKF2 parameter recommendations\n"
-    prompt += "4. **Overall Flight Safety Rating**: Rate 1-10 with justification\n\n"
+    if for_chat:
+        prompt = "# Flight Log Context\n\n"
+        prompt += ("The following data was extracted from a PX4 ULog. Use it to "
+                   "answer the user's questions. Do not write a full analysis report "
+                   "unless asked. If the data does not contain enough evidence, say so.\n\n")
+    else:
+        prompt = "# Flight Log Analysis Request\n\n"
+        prompt += "Please analyze this PX4 flight log data and provide:\n"
+        prompt += "1. **Failure Detection**: Any anomalies, sensor failures, or estimation problems\n"
+        prompt += "2. **PID Tuning Assessment**: Rate and attitude controller performance with specific improvement recommendations\n"
+        prompt += "3. **EKF Parameter Tuning**: Filter health assessment with specific EKF2 parameter recommendations\n"
+        prompt += "4. **Overall Flight Safety Rating**: Rate 1-10 with justification\n\n"
 
     prompt += "## Flight Summary\n```json\n"
     prompt += json.dumps(flight_summary, indent=2, default=str)
@@ -923,6 +993,8 @@ class AIAnalysisHandler(TornadoRequestHandlerBase):
             log_id=log_id,
             has_api_key=has_api_key,
             default_model=_default_analysis_model(),
+            default_effort=_DEFAULT_EFFORT,
+            efforts=list(_ALLOWED_EFFORTS),
             current_user=self.get_current_user(),
         ))
 
@@ -1030,10 +1102,13 @@ class AIAnalysisModelsHandler(TornadoRequestHandlerBase):
                 seen.add(mid)
                 unique_ids.append(mid)
 
+        unique_ids.sort(key=_grok_model_sort_key, reverse=True)
         self.set_header('Content-Type', 'application/json')
         self.write(json.dumps({
             'models': unique_ids,
             'default': _default_analysis_model(unique_ids),
+            'efforts': list(_ALLOWED_EFFORTS),
+            'default_effort': _DEFAULT_EFFORT,
         }))
 
 
@@ -1052,38 +1127,28 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
     @tornado.gen.coroutine
     def post(self, *args, **kwargs):
         """POST request - run AI analysis on the log."""
-        log_id, api_key, model = _begin_analysis_request(self)
+        log_id, api_key, model, effort = _begin_analysis_request(self)
         if not log_id:
             return
 
         try:
-            ulog, px4_ulog = _load_ulog_for_analysis(log_id)
-
-            # Extract all data
-            flight_summary = _extract_flight_summary(ulog, px4_ulog)
-            pid_data = _extract_pid_data(ulog)
-            ekf_data = _extract_ekf_data(ulog)
-            vehicle_status = _extract_vehicle_status(ulog)
-            parameters = _extract_parameters(ulog)
-            logged_messages = _extract_logged_messages(ulog)
-            motor_failure = _detect_motor_failure(ulog)
-
-            # Build the prompt
+            data = _extracted_flight_data(log_id)
             user_prompt = _build_analysis_prompt(
-                flight_summary, pid_data, ekf_data, vehicle_status,
-                parameters, logged_messages, motor_failure
+                data['flight_summary'], data['pid_data'], data['ekf_data'],
+                data['vehicle_status'], data['parameters'],
+                data['logged_messages'], data['motor_failure']
             )
 
             ok, payload, status = yield _call_grok(
-                api_key, model, SYSTEM_PROMPT, user_prompt)
+                api_key, model, SYSTEM_PROMPT, user_prompt, effort=effort)
             if ok:
                 _write_analysis_success(self, payload, {
-                    'duration_s': flight_summary.get('duration_s', 0),
-                    'mav_type': flight_summary.get('mav_type', 'Unknown'),
-                    'num_parameters': len(parameters),
-                    'has_ekf_data': bool(ekf_data),
-                    'has_pid_data': bool(pid_data),
-                    'num_messages': len(logged_messages),
+                    'duration_s': data['flight_summary'].get('duration_s', 0),
+                    'mav_type': data['flight_summary'].get('mav_type', 'Unknown'),
+                    'num_parameters': len(data['parameters']),
+                    'has_ekf_data': bool(data['ekf_data']),
+                    'has_pid_data': bool(data['pid_data']),
+                    'num_messages': len(data['logged_messages']),
                 }, log_id)
             else:
                 _json_error(self, status, payload)
@@ -1091,3 +1156,4 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
         except Exception as e:
             traceback.print_exc()
             _json_error(self, 500, 'Analysis failed: {}'.format(str(e)))
+

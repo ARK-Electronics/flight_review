@@ -173,6 +173,163 @@
             font-size: 0.8em;
             font-weight: 500;
         }
+        .ai-chat-panel {
+            margin-top: 28px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background: #fff;
+            overflow: hidden;
+        }
+        .ai-chat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e9ecef;
+            background: #f8f9fa;
+        }
+        .ai-chat-header h4 {
+            margin: 0;
+            font-size: 1.05rem;
+        }
+        .ai-chat-header h4 i {
+            color: #e94560;
+            margin-right: 6px;
+        }
+        .ai-chat-messages {
+            min-height: 160px;
+            max-height: 420px;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #fafbfc;
+        }
+        .ai-chat-empty {
+            color: #adb5bd;
+            text-align: center;
+            padding: 24px 8px;
+        }
+        .ai-chat-suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+            margin-top: 12px;
+        }
+        .ai-chat-suggestions button {
+            border: 1px solid #dee2e6;
+            background: #fff;
+            color: #495057;
+            border-radius: 16px;
+            padding: 4px 12px;
+            font-size: 0.82em;
+        }
+        .ai-chat-suggestions button:hover {
+            border-color: #1a73e8;
+            color: #1a73e8;
+        }
+        .ai-chat-bubble-user,
+        .ai-chat-bubble-assistant,
+        .ai-chat-bubble-error,
+        .ai-chat-bubble-pending {
+            max-width: 90%;
+            padding: 10px 14px;
+            line-height: 1.45;
+        }
+        .ai-chat-bubble-user {
+            align-self: flex-end;
+            background: #1a73e8;
+            color: #fff;
+            border-radius: 12px 12px 4px 12px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .ai-chat-bubble-assistant {
+            align-self: flex-start;
+            background: #fff;
+            border: 1px solid #e9ecef;
+            border-radius: 12px 12px 12px 4px;
+        }
+        .ai-chat-bubble-assistant h1,
+        .ai-chat-bubble-assistant h2,
+        .ai-chat-bubble-assistant h3,
+        .ai-chat-bubble-assistant h4 {
+            margin-top: 0.8em;
+            margin-bottom: 0.4em;
+            font-size: 1.05em;
+        }
+        .ai-chat-bubble-assistant p:last-child {
+            margin-bottom: 0;
+        }
+        .ai-chat-bubble-assistant table {
+            width: 100%;
+            margin: 0.6em 0;
+            border-collapse: collapse;
+            font-size: 0.92em;
+        }
+        .ai-chat-bubble-assistant th,
+        .ai-chat-bubble-assistant td {
+            border: 1px solid #dee2e6;
+            padding: 4px 8px;
+        }
+        .ai-chat-bubble-assistant code {
+            background: #f4f4f4;
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+        .ai-chat-bubble-error {
+            align-self: stretch;
+            background: #f8d7da;
+            color: #842029;
+            border-radius: 8px;
+        }
+        .ai-chat-bubble-pending {
+            align-self: flex-start;
+            color: #6c757d;
+            font-style: italic;
+        }
+        .ai-chat-meta {
+            font-size: 0.75em;
+            color: #adb5bd;
+            margin-top: 6px;
+        }
+        .ai-chat-input-row {
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+            border-top: 1px solid #e9ecef;
+            background: #fff;
+        }
+        .ai-chat-input-row textarea {
+            flex: 1;
+            min-height: 44px;
+            max-height: 120px;
+            resize: vertical;
+        }
+        @media (max-width: 576px) {
+            .ai-analysis-container {
+                padding: 12px 0;
+            }
+            .analysis-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            .btn-group-nav a {
+                margin-left: 0;
+                margin-right: 8px;
+            }
+            .ai-chat-bubble-user,
+            .ai-chat-bubble-assistant {
+                max-width: 100%;
+            }
+            .ai-chat-input-row {
+                flex-direction: column;
+            }
+        }
     </style>
 </head>
 <body>
@@ -245,6 +402,17 @@ xai_model = grok-4.6</pre>
                             style="width:auto; min-width:220px;">
                         <option value="{{ default_model }}">{{ default_model }} (loading…)</option>
                     </select>
+                    <label for="effort-select" class="form-label mb-0 me-2">
+                        Effort:
+                    </label>
+                    <select id="effort-select" class="form-select form-select-sm"
+                            style="width:auto; min-width:180px;"
+                            title="Reasoning effort. Medium is recommended for log analysis.">
+                        <option value="low">low — faster</option>
+                        <option value="medium" selected>medium — recommended</option>
+                        <option value="high">high — deeper</option>
+                        <option value="xhigh">xhigh — maximum</option>
+                    </select>
                     <button id="run-analysis-btn" class="btn btn-primary" onclick="runAnalysis()">
                         <i class="fa-solid fa-play"></i> Run AI Analysis
                     </button>
@@ -266,6 +434,24 @@ xai_model = grok-4.6</pre>
                             model for expert-level failure detection and tuning recommendations.
                         </p>
                     </div>
+                </div>
+
+                <div class="ai-chat-panel" id="ai-chat-panel">
+                    <div class="ai-chat-header">
+                        <h4><i class="fa-solid fa-comments"></i> Ask about this log</h4>
+                        <button id="chat-clear-btn" class="btn btn-sm btn-outline-secondary" type="button">
+                            Clear chat
+                        </button>
+                    </div>
+                    <div id="chat-messages" class="ai-chat-messages"></div>
+                    <form id="chat-form" class="ai-chat-input-row">
+                        <textarea id="chat-input" class="form-control" rows="2"
+                                  placeholder="Ask a question about this flight log…"
+                                  maxlength="8000"></textarea>
+                        <button type="submit" id="chat-send-btn" class="btn btn-primary">
+                            <i class="fa-solid fa-paper-plane"></i> Send
+                        </button>
+                    </form>
                 </div>
                 {% endif %}
 
@@ -299,6 +485,9 @@ xai_model = grok-4.6</pre>
         md += `**Date:** ${new Date().toISOString().slice(0, 10)}\n`;
         if (lastAnalysisData.model) {
             md += `**Model:** ${lastAnalysisData.model}\n`;
+        }
+        if (lastAnalysisData.effort) {
+            md += `**Effort:** ${lastAnalysisData.effort}\n`;
         }
 
         // Data summary
@@ -364,7 +553,8 @@ xai_model = grok-4.6</pre>
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: document.getElementById('model-select').value,
+                model: selectedModel(),
+                effort: selectedEffort(),
             }),
         })
         .then(response => response.json().then(data => ({status: response.status, body: data})))
@@ -414,6 +604,9 @@ xai_model = grok-4.6</pre>
             if (data.model) {
                 html += `<span class="model-badge">${data.model}</span>`;
             }
+            if (data.effort) {
+                html += `<span class="badge-info">Effort: ${data.effort}</span>`;
+            }
             if (data.cached) {
                 html += '<span class="cached-badge"><i class="fa-solid fa-database"></i> Cached</span>';
             }
@@ -455,14 +648,47 @@ xai_model = grok-4.6</pre>
     // Check for cached analysis on page load
     {% if has_api_key %}
     const DEFAULT_MODEL = {{ default_model | tojson }};
+    const DEFAULT_EFFORT = {{ default_effort | tojson }};
+
+    function selectedModel() {
+        const el = document.getElementById('model-select');
+        return (el && el.value) ? el.value : DEFAULT_MODEL;
+    }
+
+    function selectedEffort() {
+        const el = document.getElementById('effort-select');
+        return (el && el.value) ? el.value : DEFAULT_EFFORT;
+    }
+
+    function modelSupportsEffort(mid) {
+        const m = (mid || '').toLowerCase();
+        if (!m.startsWith('grok-')) return false;
+        if (m.includes('grok-build') || m.includes('imagine') || m.includes('voice')
+                || m.includes('image') || m.includes('video') || m.includes('tts')
+                || m.includes('non-reasoning')) {
+            return false;
+        }
+        return true;
+    }
+
+    function syncEffortEnabled() {
+        const effort = document.getElementById('effort-select');
+        if (!effort) return;
+        effort.disabled = !modelSupportsEffort(selectedModel());
+    }
 
     function loadModels() {
         const select = document.getElementById('model-select');
+        const effortSelect = document.getElementById('effort-select');
+        if (effortSelect) {
+            effortSelect.value = DEFAULT_EFFORT;
+        }
         if (!select) return;
         fetch('/ai_analysis/models', { method: 'GET' })
             .then(response => response.json())
             .then(data => {
                 if (!data || !Array.isArray(data.models) || data.models.length === 0) {
+                    syncEffortEnabled();
                     return;
                 }
                 const preferred = data.default || DEFAULT_MODEL;
@@ -472,7 +698,7 @@ xai_model = grok-4.6</pre>
                 data.models.forEach(mid => {
                     const opt = document.createElement('option');
                     opt.value = mid;
-                    opt.textContent = mid;
+                    opt.textContent = mid === preferred ? mid + ' (newest)' : mid;
                     if (mid === preferred) {
                         opt.selected = true;
                         foundPreferred = true;
@@ -488,14 +714,22 @@ xai_model = grok-4.6</pre>
                     select.insertBefore(opt, select.firstChild);
                 }
                 select.value = preferred;
+                if (effortSelect && data.default_effort) {
+                    effortSelect.value = data.default_effort;
+                }
+                syncEffortEnabled();
             })
             .catch(() => {
-                // Keep the single default option already present
                 const select = document.getElementById('model-select');
                 if (select && select.options.length > 0) {
                     select.options[0].textContent = DEFAULT_MODEL;
                 }
+                syncEffortEnabled();
             });
+    }
+    const modelSelectEl = document.getElementById('model-select');
+    if (modelSelectEl) {
+        modelSelectEl.addEventListener('change', syncEffortEnabled);
     }
     loadModels();
 
@@ -516,6 +750,183 @@ xai_model = grok-4.6</pre>
             }
         })
         .catch(() => { /* ignore - user can run manually */ });
+    })();
+
+    (function setupChat() {
+        const messagesEl = document.getElementById('chat-messages');
+        const form = document.getElementById('chat-form');
+        const input = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('chat-send-btn');
+        const clearBtn = document.getElementById('chat-clear-btn');
+        if (!messagesEl || !form || !input) return;
+
+        let chatMessages = [];
+        let chatBusy = false;
+
+        const SUGGESTIONS = [
+            ['Failsafes / crash', 'What caused any failsafe, crash, or loss of control in this log?'],
+            ['PID tracking', 'How is rate and attitude PID tracking, and which gains would you change?'],
+            ['EKF / GPS', 'Are there EKF, GPS, or sensor problems I should worry about?'],
+            ['Motors / battery', 'Is there evidence of a motor, propeller, or battery issue?'],
+        ];
+
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function setBusy(busy) {
+            chatBusy = busy;
+            if (sendBtn) sendBtn.disabled = busy;
+            input.disabled = busy;
+        }
+
+        function renderChat() {
+            messagesEl.innerHTML = '';
+            if (!chatMessages.length) {
+                const empty = document.createElement('div');
+                empty.className = 'ai-chat-empty';
+                empty.innerHTML = '<div>Ask a question about this flight log.</div>';
+                const chips = document.createElement('div');
+                chips.className = 'ai-chat-suggestions';
+                SUGGESTIONS.forEach(([label, question]) => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.textContent = label;
+                    btn.addEventListener('click', () => sendChat(question));
+                    chips.appendChild(btn);
+                });
+                empty.appendChild(chips);
+                messagesEl.appendChild(empty);
+                return;
+            }
+            chatMessages.forEach((msg) => {
+                const bubble = document.createElement('div');
+                if (msg.role === 'user') {
+                    bubble.className = 'ai-chat-bubble-user';
+                    bubble.textContent = msg.content;
+                } else if (msg.role === 'error') {
+                    bubble.className = 'ai-chat-bubble-error';
+                    bubble.textContent = msg.content;
+                } else if (msg.role === 'pending') {
+                    bubble.className = 'ai-chat-bubble-pending';
+                    bubble.textContent = msg.content;
+                } else {
+                    bubble.className = 'ai-chat-bubble-assistant';
+                    bubble.innerHTML = (typeof marked !== 'undefined')
+                        ? marked.parse(msg.content || '')
+                        : escapeHtml(msg.content || '');
+                    if (msg.model || msg.effort) {
+                        const meta = document.createElement('div');
+                        meta.className = 'ai-chat-meta';
+                        meta.textContent = [msg.model, msg.effort].filter(Boolean).join(' · ');
+                        bubble.appendChild(meta);
+                    }
+                    bubble.querySelectorAll('pre code').forEach((block) => {
+                        if (typeof hljs !== 'undefined') hljs.highlightElement(block);
+                    });
+                }
+                messagesEl.appendChild(bubble);
+            });
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function sendChat(text) {
+            const message = (text || '').trim();
+            if (!message || chatBusy) return;
+            chatMessages = chatMessages.filter(m => m.role !== 'error' && m.role !== 'pending');
+            chatMessages.push({ role: 'user', content: message });
+            chatMessages.push({ role: 'pending', content: 'Thinking… reasoning models can take a few minutes.' });
+            renderChat();
+            setBusy(true);
+            input.value = '';
+
+            const history = chatMessages
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(m => ({ role: m.role, content: m.content }));
+
+            fetch('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: message,
+                    history: history,
+                    model: selectedModel(),
+                    effort: selectedEffort(),
+                }),
+            })
+            .then(response => response.json().then(body => ({status: response.status, body})))
+            .then(({status, body}) => {
+                chatMessages = chatMessages.filter(m => m.role !== 'pending');
+                if (status === 200 && body) {
+                    if (Array.isArray(body.messages) && body.messages.length) {
+                        chatMessages = body.messages.map(m => ({
+                            role: m.role,
+                            content: m.content,
+                            model: body.model,
+                            effort: body.effort,
+                        }));
+                    } else {
+                        chatMessages.push({
+                            role: 'assistant',
+                            content: body.reply || '',
+                            model: body.model,
+                            effort: body.effort,
+                        });
+                    }
+                } else {
+                    chatMessages.push({
+                        role: 'error',
+                        content: (body && body.error) || 'Chat request failed',
+                    });
+                }
+                renderChat();
+                setBusy(false);
+            })
+            .catch(err => {
+                chatMessages = chatMessages.filter(m => m.role !== 'pending');
+                chatMessages.push({
+                    role: 'error',
+                    content: err.message || String(err),
+                });
+                renderChat();
+                setBusy(false);
+            });
+        }
+
+        form.addEventListener('submit', (ev) => {
+            ev.preventDefault();
+            sendChat(input.value);
+        });
+        input.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter' && !ev.shiftKey) {
+                ev.preventDefault();
+                sendChat(input.value);
+            }
+        });
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                fetch('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), {
+                    method: 'DELETE',
+                }).catch(() => {});
+                chatMessages = [];
+                renderChat();
+            });
+        }
+
+        fetch('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), { method: 'GET' })
+            .then(response => response.json())
+            .then(data => {
+                if (data && Array.isArray(data.messages) && data.messages.length) {
+                    chatMessages = data.messages;
+                }
+                renderChat();
+            })
+            .catch(() => { renderChat(); });
     })();
     {% endif %}
 </script>
