@@ -13,7 +13,7 @@ import traceback
 import numpy as np
 import tornado.web
 import tornado.gen
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from tornado.httpclient import AsyncHTTPClient, HTTPClientError, HTTPRequest
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
@@ -31,6 +31,12 @@ AI_ANALYSIS_TEMPLATE = 'ai_analysis.html'
 
 # Newest known flagship; used when the live model list is empty or unreachable.
 _FALLBACK_GROK_MODEL = 'grok-4.6'
+
+# xAI documents a 3600s client timeout for grok-4.6. Default reasoning effort is
+# high, so time-to-first-token is often ~50s and a full log analysis commonly
+# exceeds two minutes. grok-build finishes well inside a 120s cap; grok-4.6 does not.
+_GROK_REQUEST_TIMEOUT_SECONDS = 3600
+_GROK_CONNECT_TIMEOUT_SECONDS = 30
 
 # AI analysis cache directory
 _AI_CACHE_DIR = os.path.join(get_cache_filepath(), 'ai_analysis')
@@ -287,10 +293,21 @@ def _call_grok(api_key, model, system_prompt, user_prompt):
             'Authorization': 'Bearer {}'.format(api_key),
         },
         body=json.dumps(request_body),
-        request_timeout=120,
-        connect_timeout=30,
+        request_timeout=_GROK_REQUEST_TIMEOUT_SECONDS,
+        connect_timeout=_GROK_CONNECT_TIMEOUT_SECONDS,
     )
-    response = yield http_client.fetch(request, raise_error=False)
+    try:
+        # Timeouts still raise even with raise_error=False.
+        response = yield http_client.fetch(request, raise_error=False)
+    except HTTPClientError as exc:
+        if exc.code == 599:
+            raise tornado.gen.Return((False, (
+                'xAI API request timed out after {}s. Reasoning models such as '
+                'grok-4.6 can take several minutes on a full log; retry or pick '
+                'a faster model such as grok-build.'
+            ).format(_GROK_REQUEST_TIMEOUT_SECONDS), 504))
+        raise tornado.gen.Return((
+            False, 'xAI API error: {}'.format(str(exc)), 502))
 
     if response.code == 200:
         result = json.loads(response.body)
