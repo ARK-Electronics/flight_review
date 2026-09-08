@@ -129,6 +129,9 @@ else:
                 print('GET[log]={}'.format(log_id))
                 ulog_file_name = get_log_filename(log_id)
 
+        from support_access import require_support_access
+        require_support_access(log_id, user)
+
         # Check if the log is pending parsing (uploader not yet approved, or a
         # historical mis-deferred upload). Try to process it now so approved
         # users (and stranded logs with an empty Uploader) become viewable.

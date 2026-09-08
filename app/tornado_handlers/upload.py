@@ -81,14 +81,16 @@ def _sha256_of_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def _find_existing_log_by_hash(content_hash: str):
+def _find_existing_log_by_hash(content_hash: str, uploader: str, support_upload=False):
     """Return existing log_id with this content hash, or None."""
     if not content_hash:
         return None
     con = get_db_connection()
     try:
         cur = con.cursor()
-        cur.execute('select Id from Logs where ContentHash = ? limit 1', [content_hash])
+        cur.execute('select Id from Logs where ContentHash = ? AND Uploader = ? '
+                    'AND (Source = ?) = ? limit 1',
+                    [content_hash, uploader, 'support-api', int(support_upload)])
         row = cur.fetchone()
         return row[0] if row else None
     finally:
@@ -320,6 +322,10 @@ class UploadHandler(TornadoRequestHandlerBase):
                      'allowForAnalysis', 'obfuscated', 'source', 'type',
                      'feedback', 'windSpeed', 'rating', 'videoUrl', 'public',
                      'vehicleName', 'redirect'])
+                if getattr(self, 'support_upload', False):
+                    form_data.update(description=b'Support log', email=b'', type=b'personal',
+                                     source=b'support-api', public=b'false',
+                                     allowForAnalysis=b'false', redirect=b'false')
                 description = escape(form_data['description'].decode("utf-8"))
                 email = form_data['email'].decode("utf-8")
                 print(f"UploadHandler: extracted email '{email}'", flush=True)
@@ -467,7 +473,8 @@ class UploadHandler(TornadoRequestHandlerBase):
                 except Exception as e:
                     print(f'Hashing failed for {new_file_name}: {e}')
                 if content_hash:
-                    existing_log_id = _find_existing_log_by_hash(content_hash)
+                    existing_log_id = _find_existing_log_by_hash(
+                        content_hash, uploader_username, getattr(self, 'support_upload', False))
                     if existing_log_id and existing_log_id != log_id:
                         try:
                             os.unlink(new_file_name)
@@ -645,10 +652,11 @@ class UploadHandler(TornadoRequestHandlerBase):
                     IOLoop.instance().add_callback(generate_overview_img_from_id, log_id)
 
                 # send notification emails
-                send_notification_email(email, full_plot_url, delete_url, edit_url, info)
+                if not getattr(self, 'support_upload', False):
+                    send_notification_email(email, full_plot_url, delete_url, edit_url, info)
 
                 admin_email = "logs@arkelectron.com"
-                if email != admin_email:
+                if email != admin_email and not getattr(self, 'support_upload', False):
                     send_admin_notification_email(
                         admin_email, email, full_plot_url,
                         delete_url, edit_url, info)
@@ -687,4 +695,3 @@ class UploadHandler(TornadoRequestHandlerBase):
 
             finally:
                 self.multipart_streamer.release_parts()
-

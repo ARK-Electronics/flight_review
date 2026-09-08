@@ -40,6 +40,8 @@ from tornado_handlers.ai_chat import AIAnalysisChatHandler
 from tornado_handlers.pid_ai_analysis import PIDAIAnalysisAPIHandler
 from tornado_handlers.health import HealthHandler, ReadyHandler, OperationsHandler
 from tornado_handlers.analysis_jobs import AnalysisJobHandler, start_runner
+from tornado_handlers.support_api import SupportUploadHandler, SupportAnalysisHandler, \
+    SupportJobHandler
 
 from helper import set_log_id_is_filename, print_cache_info #pylint: disable=C0411
 from config import debug_print_timing, get_overview_img_filepath, get_domain_name #pylint: disable=C0411
@@ -180,6 +182,9 @@ extra_patterns = [
     (r'/account', AccountHandler),
     (r'/admin', AdminUsersHandler),
     (r'/admin/api', AdminUsersAPIHandler),
+    (r'/api/support/upload', SupportUploadHandler),
+    (r'/api/support/analysis', SupportAnalysisHandler),
+    (r'/api/support/jobs/([a-f0-9]{32})', SupportJobHandler),
     (r'/ai_analysis', AIAnalysisHandler),
     (r'/ai_analysis/api', AIAnalysisAPIHandler),
     (r'/ai_analysis/chat', AIAnalysisChatHandler),
