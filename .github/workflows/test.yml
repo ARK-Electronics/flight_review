@@ -28,6 +28,7 @@ jobs:
           PYTHONPATH: app:app/plot_app:app/plot_app/libevents/libs/python
           OPENBLAS_NUM_THREADS: '1'
       - run: bash run_pylint.sh
+      - run: node --test scripts/tests/*.test.cjs
       - run: pip-audit -r app/requirements.txt --no-deps --disable-pip
   image:
     name: Production image smoke test
@@ -63,4 +64,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SEVALLA_API_KEY: ${{ secrets.SEVALLA_API_KEY }}
-

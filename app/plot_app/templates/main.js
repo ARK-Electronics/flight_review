@@ -81,9 +81,13 @@ $(function() { //on startup
 });
 
 var fragment_elements = new Map(); // Map with {"fragment-id", dom-element} items
+{% include 'firefox_plot_repaint.js' %}
+var plots_setup_complete = false;
 
 function setupPlots() {
 	// do necessary setup after plots are loaded
+	if (plots_setup_complete) return;
+	plots_setup_complete = true;
 
 	var plot_ids = [
 {% set comma = joiner(",") %}
@@ -111,7 +115,9 @@ function setupPlots() {
 		}
 	}
 	var root = Bokeh.index[Object.keys(Bokeh.index)[0]];
+	var plot_views = [];
 	foreach_plot_view(root, function(plot_view) {
+		plot_views.push(plot_view);
 		index_of = plot_ids.indexOf(plot_view.model.id)
 		if (index_of >= 0) {
 			var a = $('<a id="'+plot_fragments[index_of]+'" '+
@@ -127,6 +133,7 @@ function setupPlots() {
 			plot_view.canvas_view.events_el.parentNode.adoptedStyleSheets.push(sheet);
 		}
 	});
+	installFirefoxPlotRepaint(plot_views);
 
 
 	$('#loading-plots').hide();
@@ -148,6 +155,7 @@ function setupPlots() {
 function renderingCompleteCheck() {
 
     function done() {
+		doc.idle.disconnect(done);
 		console.log('rendering done');
 		setupPlots();
     }
