@@ -1,0 +1,11 @@
+.git
+.env
+**/__pycache__
+**/*.pyc
+data
+app/data
+app/config_user.ini
+app/backups
+screenshots
+work
+.venv

@@ -8,6 +8,9 @@ It uses the [bokeh](http://bokeh.pydata.org) library for plotting and the
 
 Flight Review is deployed at https://review.arkelectron.com.
 
+See the [production operations guide](docs/operations.md) for Sevalla configuration,
+verified deployments, monitoring, backups, recovery and development checks.
+
 ![Plot View](screenshots/plot_view.png)
 
 ## 3D View
@@ -18,7 +21,7 @@ Flight Review is deployed at https://review.arkelectron.com.
 
 ### Requirements
 
-- Python3 (3.6+ recommended)
+- Python 3.12 (the supported production runtime)
 - SQLite3
 - [http://fftw.org/](http://fftw.org/)
 
@@ -48,9 +51,9 @@ brew install fftw
 
 ```bash
 # After git clone, enter the directory
-git clone --recursive https://github.com/PX4/flight_review.git
+git clone --recursive https://github.com/ARK-Electronics/flight_review.git
 cd flight_review/app
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.txt
 # Note: preferably use a virtualenv
 
 # Note: if you get an error about "ModuleNotFoundError: No module named 'libevents_parse'" update submodules
@@ -59,10 +62,11 @@ git submodule update --init --recursive
 
 ### Setup
 
-Initialize the Database as following:
+From the repository root, initialize the database:
 
 ```bash
-./app/setup_db.py
+cd app
+python setup_db.py
 ```
 
 **Note:** `setup_db.py` can also be used to upgrade the database tables, for instance when new entries are added (it automatically detects that).
@@ -86,6 +90,9 @@ cd app
 ```
 
 To start the whole web application:
+
+First set a random `COOKIE_SECRET` in your environment (see the operations guide).
+
 ```bash
 cd app
 ./serve.py --show

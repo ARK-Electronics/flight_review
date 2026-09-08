@@ -57,6 +57,7 @@
 
 {% if has_xai_api_key %}
 <script>
+{% include "analysis_jobs.js" %}
 (function () {
     const LOG_ID = "{{ log_id }}";
     const DEFAULT_MODEL = "{{ default_model }}";
@@ -126,7 +127,7 @@
 
     function runAnalysis() {
         showLoading();
-        fetch('/ai_analysis/pid?log=' + encodeURIComponent(LOG_ID), {
+        flightAnalysisRequest('/ai_analysis/pid?log=' + encodeURIComponent(LOG_ID), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

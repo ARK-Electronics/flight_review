@@ -1,6 +1,7 @@
+# pylint: disable=line-too-long
 """
 Security helpers shared by tornado handlers:
-  * Bounded log parsing in a thread pool (no fork)
+  * Bounded log parsing in fresh subprocesses (no fork)
   * In-process per-IP rate limiting
   * Default HTTP security headers
 
@@ -17,7 +18,9 @@ import os
 import sys
 import time
 from collections import defaultdict, deque
-from concurrent.futures import BrokenExecutor, ThreadPoolExecutor
+import pickle
+import tempfile
+import weakref
 from typing import Deque, Dict, Optional, Tuple
 
 # Make plot_app importable for the worker process too.
@@ -32,84 +35,49 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../pl
 # are typically well under a second; this is a safety net for huge files.
 PARSER_WALL_TIMEOUT_SECONDS = int(os.environ.get(
     'FLIGHT_REVIEW_PARSER_WALL_TIMEOUT_SECONDS', '240'))
-# Maximum concurrent upload parses. These run in threads in the main process
-# (not forked workers) so they share the container's RAM with Bokeh.
-PARSER_MAX_CONCURRENCY = int(os.environ.get(
-    'FLIGHT_REVIEW_PARSER_MAX_CONCURRENCY', '1'))
+# Fresh interpreters avoid copying Bokeh's in-memory log cache.
+PARSER_MAX_CONCURRENCY = int(os.environ.get('FLIGHT_REVIEW_PARSER_MAX_CONCURRENCY', '1'))
+_parser_semaphores = weakref.WeakKeyDictionary()
 
 
-def _worker_load_log(file_name: str):
-    """Parse a just-uploaded log for metadata (no FIFO topics)."""
-    from helper import load_log_file_for_upload  # type: ignore
-    return load_log_file_for_upload(file_name)
-
-
-_parser_pool: Optional[ThreadPoolExecutor] = None
-_parser_semaphore: Optional[asyncio.Semaphore] = None
-
-
-def _get_parser_pool() -> ThreadPoolExecutor:
-    global _parser_pool
-    if _parser_pool is None:
-        # Threads, not processes. ProcessPoolExecutor forks this Bokeh process
-        # (including any cached ULog objects), doubles RSS, and OOM-kills the
-        # container. That showed up as SIGTERM + BrokenProcessPool on recv()
-        # and the upload never reached the header-only fallback.
-        _parser_pool = ThreadPoolExecutor(
-            max_workers=max(1, PARSER_MAX_CONCURRENCY),
-            thread_name_prefix='ulog-parse')
-    return _parser_pool
-
-
-def _get_parser_semaphore() -> asyncio.Semaphore:
-    global _parser_semaphore
-    if _parser_semaphore is None:
-        _parser_semaphore = asyncio.Semaphore(max(1, PARSER_MAX_CONCURRENCY))
-    return _parser_semaphore
+def _get_parser_semaphore():
+    loop = asyncio.get_running_loop()
+    if loop not in _parser_semaphores:
+        _parser_semaphores[loop] = asyncio.Semaphore(max(1, PARSER_MAX_CONCURRENCY))
+    return _parser_semaphores[loop]
 
 
 class ParserTimeout(Exception):
-    """Raised when log parsing exceeded the allowed wall-clock budget."""
+    """The parser exceeded its wall-clock budget and was killed."""
 
 
 class ParserCrashed(Exception):
-    """Raised when the parser worker process died (OOM kill, segfault, ...)."""
+    """The isolated parser exited without a valid result."""
 
 
 async def parse_log_bounded(file_name: str):
-    """Parse `file_name` in a thread with concurrency + time bounds.
-
-    A process pool is intentionally not used: forking the Bokeh server to parse
-    a log doubles memory and is what OOM-killed uploads (BrokenProcessPool).
-    Memory is bounded by SafeULog topic caps instead.
-    """
-    loop = asyncio.get_event_loop()
-    sem = _get_parser_semaphore()
-    async with sem:
-        try:
-            pool = _get_parser_pool()
-            future = loop.run_in_executor(pool, _worker_load_log, file_name)
-            return await asyncio.wait_for(future, timeout=PARSER_WALL_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError as exc:
-            raise ParserTimeout(
-                f'Parsing exceeded {PARSER_WALL_TIMEOUT_SECONDS}s budget') from exc
-        except (BrokenPipeError, EOFError, BrokenExecutor) as exc:
-            _shutdown_parser_pool()
-            raise ParserCrashed('Parser worker terminated unexpectedly') from exc
-        except Exception:
-            # Real parse errors (ULogException etc.) propagate as-is.
-            raise
-
-
-def _shutdown_parser_pool():
-    global _parser_pool
-    pool = _parser_pool
-    _parser_pool = None
-    if pool is not None:
-        try:
-            pool.shutdown(wait=False, cancel_futures=True)
-        except Exception:
-            pass
+    """Kill and reap timed-out work before releasing the concurrency slot."""
+    async with _get_parser_semaphore():
+        with tempfile.TemporaryDirectory(prefix='flight-parse-') as tmp:
+            output = os.path.join(tmp, 'result.pickle')
+            worker = os.path.abspath(os.path.join(os.path.dirname(__file__), '../isolated_worker.py'))
+            env = dict(os.environ, OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1')
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, worker, os.path.abspath(file_name), output,
+                env=env, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            try:
+                await asyncio.wait_for(proc.wait(), PARSER_WALL_TIMEOUT_SECONDS)
+                if proc.returncode != 0 or not os.path.isfile(output):
+                    raise ParserCrashed('Parser failed; check file format and resource limits')
+                # This file is created by our worker in a private, unpredictable directory.
+                with open(output, 'rb') as stream:
+                    return pickle.load(stream)
+            except asyncio.TimeoutError as exc:
+                raise ParserTimeout('Parsing exceeded its time budget') from exc
+            finally:
+                if proc.returncode is None:
+                    proc.kill()
+                await proc.wait()
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +88,7 @@ class RateLimiter:
     """Simple per-key sliding-window limiter.
 
     Keys are (bucket, identifier) so different endpoints can share an instance.
-    Single-process only — for production, also configure an edge limit (nginx
+    Single-process only â€” for production, also configure an edge limit (nginx
     limit_req_zone). With multiple bokeh worker processes the per-process limit
     multiplies by num_procs.
     """
@@ -165,10 +133,6 @@ def get_rate_limiter() -> RateLimiter:
 
 def client_ip(handler) -> str:
     """Best-effort client IP, honouring X-Forwarded-For when we run behind nginx."""
-    xff = handler.request.headers.get('X-Forwarded-For')
-    if xff:
-        # left-most entry is the original client
-        return xff.split(',')[0].strip()
     return handler.request.remote_ip or 'unknown'
 
 

@@ -19,6 +19,8 @@ from bokeh.application.handlers import DirectoryHandler
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plot_app'))
 from tornado.web import StaticFileHandler
 from tornado.web import RedirectHandler
+from runtime_config import cookie_secret, require_persistent_storage
+from backup_scheduler import start_backups
 from tornado_handlers.download import DownloadHandler
 from tornado_handlers.upload import UploadHandler
 from tornado_handlers.browse import BrowseHandler, BrowseDataRetrievalHandler
@@ -36,6 +38,8 @@ from tornado_handlers.ai_analysis import AIAnalysisHandler, AIAnalysisAPIHandler
     AIAnalysisModelsHandler
 from tornado_handlers.ai_chat import AIAnalysisChatHandler
 from tornado_handlers.pid_ai_analysis import PIDAIAnalysisAPIHandler
+from tornado_handlers.health import HealthHandler, ReadyHandler, OperationsHandler
+from tornado_handlers.analysis_jobs import AnalysisJobHandler, start_runner
 
 from helper import set_log_id_is_filename, print_cache_info #pylint: disable=C0411
 from config import debug_print_timing, get_overview_img_filepath, get_domain_name #pylint: disable=C0411
@@ -86,6 +90,8 @@ parser.add_argument('--allow-websocket-origin', action='append', type=str, metav
                     default=None)
 
 args = parser.parse_args()
+session_secret = cookie_secret(local=args.file is not None)
+require_persistent_storage()
 
 # This should remain here until --host is removed entirely
 _fixup_deprecated_host_args(args)
@@ -151,6 +157,10 @@ set_log_id_is_filename(show_ulog_file)
 
 # additional request handlers
 extra_patterns = [
+    (r'/ai_analysis/jobs/([a-f0-9]{32})', AnalysisJobHandler),
+    (r'/healthz', HealthHandler),
+    (r'/readyz', ReadyHandler),
+    (r'/opsz', OperationsHandler),
     (r'/upload', UploadHandler),
     (r'/browse', BrowseHandler),
     (r'/browse_data_retrieval', BrowseDataRetrievalHandler),
@@ -209,9 +219,7 @@ while server is None:
             applications, extra_patterns=extra_patterns, **server_kwargs)
 
         # pylint: disable=protected-access
-        cookie_secret = os.environ.get(
-            'COOKIE_SECRET', 'change_me_to_a_random_string')
-        server._tornado.settings['cookie_secret'] = cookie_secret
+        server._tornado.settings['cookie_secret'] = session_secret
         server._tornado.settings['login_url'] = '/login'
 
     except OSError as e:
@@ -249,9 +257,10 @@ if debug_print_timing():
     server.io_loop.call_later(60, print_statistics)
 
 # run_until_shutdown has been added 0.12.4 and is the preferred start method
+start_runner()
+start_backups()
 run_op = getattr(server, "run_until_shutdown", None)
 if callable(run_op):
     server.run_until_shutdown()
 else:
     server.start()
-

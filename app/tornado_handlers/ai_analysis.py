@@ -8,7 +8,7 @@ import json
 import os
 import re
 import sys
-import traceback
+import tempfile
 
 import numpy as np
 import tornado.web
@@ -17,7 +17,7 @@ from tornado.httpclient import AsyncHTTPClient, HTTPClientError, HTTPRequest
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
-from config import get_xai_api_key, get_xai_model, get_cache_filepath
+from config import get_xai_api_key, get_xai_model, get_cache_filepath, get_db_connection
 from helper import validate_log_id, get_log_filename, load_log_file, \
     get_flight_mode_changes, flight_modes_table
 
@@ -140,11 +140,17 @@ def _load_cached_analysis(log_id, kind='full'):
 def _save_cached_analysis(log_id, data, kind='full'):
     """Save analysis result to cache."""
     cache_path = _get_cache_path(log_id, kind)
+    descriptor, temporary = tempfile.mkstemp(dir=_AI_CACHE_DIR, prefix='.analysis-')
     try:
-        with open(cache_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f)
-    except OSError:
-        pass
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+            json.dump(data, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, cache_path)
+    finally:
+        if os.path.exists(temporary):
+            os.remove(temporary)
+
 
 
 # System prompt grounded in UAV-SEAD paper findings and PX4 domain knowledge
@@ -228,6 +234,16 @@ def _checked_log_id(handler):
     log_id = handler.get_argument('log', '')
     if not validate_log_id(log_id):
         _json_error(handler, 400, 'Invalid log ID')
+        return None
+    with get_db_connection() as con:
+        user = con.execute('SELECT Approved, IsAdmin FROM Users WHERE Username=?',
+                           (handler.current_user,)).fetchone()
+        log = con.execute('SELECT Public, Uploader FROM Logs WHERE Id=?', (log_id,)).fetchone()
+    if not user or not user[0]:
+        _json_error(handler, 403, 'An approved account is required')
+        return None
+    if not log or not (log[0] or log[1] == handler.current_user or user[1]):
+        _json_error(handler, 404, 'Log not found')
         return None
     return log_id
 
@@ -1124,36 +1140,7 @@ class AIAnalysisAPIHandler(TornadoRequestHandlerBase):
         _write_cached_or_empty(self, log_id)
 
     @tornado.web.authenticated
-    @tornado.gen.coroutine
     def post(self, *args, **kwargs):
-        """POST request - run AI analysis on the log."""
-        log_id, api_key, model, effort = _begin_analysis_request(self)
-        if not log_id:
-            return
-
-        try:
-            data = _extracted_flight_data(log_id)
-            user_prompt = _build_analysis_prompt(
-                data['flight_summary'], data['pid_data'], data['ekf_data'],
-                data['vehicle_status'], data['parameters'],
-                data['logged_messages'], data['motor_failure']
-            )
-
-            ok, payload, status = yield _call_grok(
-                api_key, model, SYSTEM_PROMPT, user_prompt, effort=effort)
-            if ok:
-                _write_analysis_success(self, payload, {
-                    'duration_s': data['flight_summary'].get('duration_s', 0),
-                    'mav_type': data['flight_summary'].get('mav_type', 'Unknown'),
-                    'num_parameters': len(data['parameters']),
-                    'has_ekf_data': bool(data['ekf_data']),
-                    'has_pid_data': bool(data['pid_data']),
-                    'num_messages': len(data['logged_messages']),
-                }, log_id)
-            else:
-                _json_error(self, status, payload)
-
-        except Exception as e:
-            traceback.print_exc()
-            _json_error(self, 500, 'Analysis failed: {}'.format(str(e)))
-
+        """Submit durable analysis; return immediately for client polling."""
+        from .analysis_jobs import submit_analysis  # pylint: disable=import-outside-toplevel
+        submit_analysis(self, 'full')

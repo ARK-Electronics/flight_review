@@ -50,13 +50,16 @@ class LoginHandler(TornadoRequestHandlerBase):
                 approved = row[1]
                 if bcrypt.verify(password, password_hash):
                     if approved:
-                        self.set_secure_cookie("user", username)
+                        self.set_secure_cookie(
+                            "user", username, secure=get_http_protocol() == 'https',
+                            httponly=True, samesite='Lax', expires_days=7)
                         # Parse any logs that were deferred while this account
                         # looked unapproved (or was still pending). Safe no-op
                         # when there are none.
                         IOLoop.current().run_in_executor(
                             None, process_pending_logs_for_user, username)
-                        self.redirect(next_url)
+                        self.redirect(next_url if next_url.startswith('/')
+                                      and not next_url.startswith('//') else '/')
                         return
                     self.render_jinja(
                         'login.html',

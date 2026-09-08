@@ -472,6 +472,7 @@ xai_model = grok-4.6</pre>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+{% include "analysis_jobs.js" %}
     const LOG_ID = "{{ log_id }}";
     let lastAnalysisData = null;
 
@@ -547,7 +548,7 @@ xai_model = grok-4.6</pre>
             </div>
         `;
 
-        fetch('/ai_analysis/api?log=' + encodeURIComponent(LOG_ID), {
+        flightAnalysisRequest('/ai_analysis/api?log=' + encodeURIComponent(LOG_ID), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -849,7 +850,7 @@ xai_model = grok-4.6</pre>
                 .filter(m => m.role === 'user' || m.role === 'assistant')
                 .map(m => ({ role: m.role, content: m.content }));
 
-            fetch('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), {
+            flightAnalysisRequest('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

@@ -1,0 +1,13 @@
+bokeh==3.8.2
+jinja2
+pyfftw
+pyulog>=1.1
+requests
+scipy>=1.8.1
+simplekml
+smopy
+pycryptodome>=3.18
+passlib
+bcrypt==3.2.2
+pymavlink
+boto3
