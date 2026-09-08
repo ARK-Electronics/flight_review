@@ -35,6 +35,16 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
     """
     base class for a tornado request handler with custom error display
     """
+    def prepare(self):
+        """Protect support imports on legacy log read/download routes too."""
+        from support_access import require_support_access
+        log_id = self.get_query_argument('log', default='')
+        if log_id:
+            try:
+                require_support_access(log_id, self.current_user)
+            except PermissionError as exc:
+                raise tornado.web.HTTPError(404) from exc
+
     def set_default_headers(self):
         # Apply baseline security headers to every response
         try:
@@ -165,4 +175,3 @@ def get_generated_db_data_from_log(log_id, con, cur):
         db_data_gen.flight_mode_durations = \
             [tuple(map(int, x.split(':'))) for x in db_tuple[12].split(',') if len(x) > 0]
     return db_data_gen
-
