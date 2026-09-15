@@ -121,6 +121,10 @@ class AdminUsersAPIHandler(TornadoRequestHandlerBase):
                     "message": f"User '{username}' approved"}))
 
             elif action == "delete":
+                # Username is the ownership key for existing logs, jobs, and
+                # chat history. Reserve it permanently before removing login.
+                cur.execute("INSERT OR IGNORE INTO DeletedUsers (Username) VALUES (?)",
+                            (username,))
                 cur.execute("DELETE FROM Users WHERE Username=?", (username,))
                 con.commit()
                 self.write(json.dumps({

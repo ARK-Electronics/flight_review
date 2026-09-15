@@ -45,14 +45,16 @@
                                     <td class="text-end">
                                         {% if not user.approved %}
                                             <button class="btn btn-sm btn-success me-1"
-                                                    onclick="approveUser('{{ user.username }}')"
+                                                    data-username="{{ user.username }}"
+                                                    onclick="approveUser(this.dataset.username)"
                                                     id="btn-approve-{{ user.username }}"
                                                     title="Approve user">
                                                 <i class="fa-solid fa-check"></i> Approve
                                             </button>
                                         {% endif %}
                                         <button class="btn btn-sm btn-outline-danger"
-                                                onclick="confirmDelete('{{ user.username }}')"
+                                                data-username="{{ user.username }}"
+                                                onclick="confirmDelete(this.dataset.username)"
                                                 title="Delete user">
                                             <i class="fa-solid fa-trash"></i> Delete
                                         </button>
@@ -101,8 +103,13 @@ function showAlert(message, type) {
     var area = document.getElementById('alert-area');
     var alert = document.createElement('div');
     alert.className = 'alert alert-' + type + ' alert-dismissible fade show';
-    alert.innerHTML = message +
-        '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+    alert.textContent = message;
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'btn-close';
+    close.setAttribute('data-bs-dismiss', 'alert');
+    close.setAttribute('aria-label', 'Close');
+    alert.appendChild(close);
     area.appendChild(alert);
     setTimeout(function() { alert.remove(); }, 5000);
 }
@@ -114,12 +121,13 @@ function approveUser(username) {
     var form = new FormData();
     form.append('action', 'approve');
     form.append('username', username);
+    form.append('_xsrf', {{ xsrf_token|tojson }});
 
     fetch('/admin/api', { method: 'POST', body: form })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.success) {
-                showAlert('User <strong>' + username + '</strong> approved.', 'success');
+                showAlert('User ' + username + ' approved.', 'success');
                 var badge = document.getElementById('status-' + username);
                 if (badge) {
                     badge.textContent = 'Approved';
@@ -156,6 +164,7 @@ function doDelete() {
     var form = new FormData();
     form.append('action', 'delete');
     form.append('username', username);
+    form.append('_xsrf', {{ xsrf_token|tojson }});
 
     fetch('/admin/api', { method: 'POST', body: form })
         .then(function(r) { return r.json(); })
@@ -165,7 +174,7 @@ function doDelete() {
             btn.textContent = 'Delete';
 
             if (data.success) {
-                showAlert('User <strong>' + username + '</strong> deleted.', 'success');
+                showAlert('User ' + username + ' deleted.', 'success');
                 var row = document.getElementById('row-' + username);
                 if (row) {
                     row.style.transition = 'opacity 0.3s';

@@ -72,6 +72,7 @@
                     <div class="d-flex flex-wrap gap-2 mb-4">
                         <form method="post" action="/account"
                               onsubmit="return confirmGenerate();">
+                            {{ xsrf_form_html }}
                             <input type="hidden" name="action" value="generate">
                             <button type="submit" class="btn btn-primary">
                                 {% if has_api_key %}Regenerate API key{% else %}Generate API key{% endif %}
@@ -80,6 +81,7 @@
                         {% if has_api_key %}
                         <form method="post" action="/account"
                               onsubmit="return confirm('Revoke this API key? Clients using it will stop working.');">
+                            {{ xsrf_form_html }}
                             <input type="hidden" name="action" value="revoke">
                             <button type="submit" class="btn btn-outline-danger">
                                 Revoke key

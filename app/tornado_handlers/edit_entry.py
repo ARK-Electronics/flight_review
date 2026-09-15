@@ -5,12 +5,14 @@ from __future__ import print_function
 import os
 from html import escape
 import sys
+import secrets
+from urllib.parse import urlencode
 import tornado.web
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
 from config import get_db_connection, get_kml_filepath, get_overview_img_filepath
-from helper import clear_ulog_cache, get_log_filename
+from helper import clear_ulog_cache, get_log_filename, validate_log_id
 
 #pylint: disable=relative-beyond-top-level
 from .common import get_jinja_env, TornadoRequestHandlerBase
@@ -27,72 +29,57 @@ class EditEntryHandler(TornadoRequestHandlerBase):
     @staticmethod
     def _is_authorized(cur, log_id, token, user=None):
         """Return True if the request is authorized to modify the log."""
-        cur.execute('select Token, Uploader, Email from Logs where Id = ?', (log_id,))
+        cur.execute('select Token, Uploader from Logs where Id = ?', (log_id,))
         db_tuple = cur.fetchone()
         if db_tuple is None:
             return False
 
         db_token = db_tuple[0]
         db_uploader = db_tuple[1]
-        db_email = db_tuple[2]
-
-        if token and token == db_token:
+        if token and db_token and secrets.compare_digest(token.encode(), db_token.encode()):
             return True
 
         if not user:
             return False
 
         # Check if user is admin or owner
-        cur.execute("SELECT IsAdmin, Email FROM Users WHERE Username=?", (user,))
+        cur.execute("SELECT IsAdmin, Approved FROM Users WHERE Username=?", (user,))
         user_row = cur.fetchone()
-        if not user_row:
+        if not user_row or not user_row[1]:
             return False
 
         is_admin = user_row[0]
-        user_email = user_row[1]
 
         if is_admin:
             return True
         if db_uploader and user == db_uploader:
             return True
-        if db_email and user_email and db_email == user_email:
-            return True
-
         return False
 
     def get(self, *args, **kwargs):
         """ GET request """
-        log_id = escape(self.get_argument('log'))
-        action = self.get_argument('action')
-        confirmed = self.get_argument('confirm', default='0')
-        token = escape(self.get_argument('token', default=''))
+        log_id = self.get_query_argument('log')
+        if not validate_log_id(log_id):
+            raise tornado.web.HTTPError(400, 'Invalid Parameter')
+        action = self.get_query_argument('action')
+        token = self.get_query_argument('token', default='')
+        self.set_header('Cache-Control', 'no-store')
+        self.set_header('Referrer-Policy', 'no-referrer')
 
         if action == 'delete':
-            if confirmed == '1':
-                if self.delete_log_entry(log_id, token, self.current_user):
-                    content = """
-<h3>Log File deleted</h3>
-<p>
-Successfully deleted the log file.
-</p>
-"""
-                else:
-                    content = """
-<h3>Failed</h3>
-<p>
-Failed to delete the log file.
-</p>
-"""
-            else: # request user to confirm
-                # use the same url, just append 'confirm=1'
-                delete_url = self.request.path+'?action=delete&log='+log_id+ \
-                        '&token='+token+'&confirm=1'
-                content = """
+            # Emailed links and legacy confirm=1 links only display this form.
+            # Mutations require a POST protected by Tornado's XSRF check.
+            delete_url = self.request.path + '?' + urlencode(
+                {'action': 'delete', 'log': log_id, 'token': token})
+            content = """
 <h3>Delete Log File</h3>
-<p>
-Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
-</p>
-""".format(delete_url=delete_url, log_id=log_id)
+<p>Confirm deletion of log {log_id}.</p>
+<form method="post" action="{delete_url}">
+  {xsrf}
+  <button type="submit" class="btn btn-danger">Delete log</button>
+</form>
+""".format(delete_url=escape(delete_url), log_id=escape(log_id),
+           xsrf=self.xsrf_form_html())
         elif action == 'edit_notes':
             # Render a form to edit the flight notes/description
             con = get_db_connection()
@@ -107,14 +94,12 @@ Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
                 if db_tuple is not None and db_tuple[0] is not None:
                     current_description = db_tuple[0]
 
-                token_param = ''
-                if token:
-                    token_param = f'&token={token}'
-
-                form_action = f"{self.request.path}?action=update_notes&log={log_id}{token_param}"
+                form_action = escape(self.request.path + '?' + urlencode(
+                    {'action': 'update_notes', 'log': log_id, 'token': token}))
                 content = f"""
 <h3>Edit Flight Notes</h3>
 <form method=\"post\" action=\"{form_action}\" class=\"mt-3\">
+  {self.xsrf_form_html()}
   <div class=\"mb-3\">
     <label for=\"description\" class=\"form-label\">Flight notes</label>
     <textarea class=\"form-control\" id=\"description\" name=\"description\"
@@ -137,9 +122,17 @@ Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
 
     def post(self, *args, **kwargs):
         """ POST request """
-        log_id = escape(self.get_argument('log'))
-        action = self.get_argument('action')
-        token = escape(self.get_argument('token', default=''))
+        log_id = self.get_query_argument('log')
+        if not validate_log_id(log_id):
+            raise tornado.web.HTTPError(400, 'Invalid Parameter')
+        action = self.get_query_argument('action')
+        token = self.get_query_argument('token', default='')
+
+        if action == 'delete':
+            if not self.delete_log_entry(log_id, token, self.current_user):
+                raise tornado.web.HTTPError(403, 'Unauthorized')
+            self.render_jinja(EDIT_TEMPLATE, content='<h3>Log File deleted</h3>')
+            return
 
         if action != 'update_notes':
             raise tornado.web.HTTPError(400, 'Invalid Parameter')
@@ -170,6 +163,8 @@ Click <a href="{delete_url}">here</a> to confirm and delete the log {log_id}.
 
         :return: True on success
         """
+        if not validate_log_id(log_id):
+            return False
         con = get_db_connection()
         try:
             cur = con.cursor()

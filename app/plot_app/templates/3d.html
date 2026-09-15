@@ -147,7 +147,7 @@
 
 
 {% if cesium_api_key != '' %}
-Cesium.Ion.defaultAccessToken = "{{ cesium_api_key }}";
+Cesium.Ion.defaultAccessToken = {{ cesium_api_key | tojson }};
 {% endif %}
 
 var terrain = Cesium.Terrain.fromWorldTerrain({
@@ -211,7 +211,7 @@ var attitude_data = {{ attitude_data }};
 attitude_data[0][0] = {{ start_timestamp }}; // Prevent initial attitude jump if the first sample is a bit later
 
 var model_scale_factor = {{ model_scale_factor }}; // model-specific scale factor
-var model_uri = "{{ model_uri }}";
+var model_uri = {{ model_uri | tojson }};
 var model_heading_rotation_deg = "{{ model_heading_rotation_deg }}";
 
 //Make sure viewer is at the desired time.
@@ -626,4 +626,3 @@ for (var i = 0; i < coll.length; i++) {
   </script>
 </body>
 </html>
-

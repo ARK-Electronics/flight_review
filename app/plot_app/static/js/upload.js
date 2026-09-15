@@ -100,6 +100,8 @@ $(function() { // on startup
             },
             type: 'POST',
             url: '/upload',
+            // Streamed handlers check XSRF before multipart fields arrive.
+            headers: { 'X-XSRFToken': form_data.get('_xsrf') },
             data: form_data,
             cache: false,
             contentType: false,
@@ -122,4 +124,3 @@ $(function() { // on startup
         });
     });
 });
-

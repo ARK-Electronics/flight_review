@@ -217,13 +217,14 @@ class AccountHandler(TornadoRequestHandlerBase):
                 _log.info('api_key_revoked user=%s', username)
             else:
                 error = "Unknown action."
-        except Exception as exc:
+        except Exception:
             traceback.print_exc()
-            error = f"Failed to update API key: {exc}"
+            error = "Failed to update API key. Please try again later."
 
         self._render_page(error=error, message=message, new_key=new_key)
 
     def _render_page(self, error=None, message=None, new_key=None):
+        self.set_header('Cache-Control', 'no-store')
         username = self.current_user
         prefix, created = _get_user_api_key_meta(username)
         created_str = ''

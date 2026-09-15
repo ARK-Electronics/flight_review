@@ -7,6 +7,7 @@ import os
 import re
 from datetime import datetime
 import json
+from html import escape
 import tornado.web
 
 # this is needed for the following imports
@@ -341,7 +342,8 @@ def _get_columns_from_tuple(db_tuple, counter, all_overview_imgs, con, cur,
         if len(db_tuple) > 21:
             uploader_email = db_tuple[20] or ''
             is_public = db_tuple[21]
-        columns.append(uploader_email)
+        # DataTables treats cell values as HTML; upload email is untrusted text.
+        columns.append(escape(uploader_email))
         columns.append('Public' if is_public else 'Private')
 
     return columns
@@ -503,7 +505,7 @@ class BrowseHandler(TornadoRequestHandlerBase):
 
         search_str = self.get_argument('search', '').lower()
         if len(search_str) > 0:
-            template_args['initial_search'] = json.dumps(search_str)
+            template_args['initial_search'] = search_str
 
         # check if user is admin
         is_admin = False

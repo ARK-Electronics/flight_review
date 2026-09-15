@@ -14,7 +14,7 @@ from pyulog.ulog2kml import convert_ulog2kml
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
-from helper import get_log_filename, \
+from helper import get_log_filename, validate_log_id, \
     flight_modes_table, load_log_file, get_default_parameters
 
 from config import get_db_connection, get_kml_filepath
@@ -29,9 +29,11 @@ class DownloadHandler(TornadoRequestHandlerBase):
     Handler for downloading a log file
     """
     @tornado.web.authenticated
-    def get(self):
+    async def get(self):
         """Handle authenticated log download requests."""
-        log_id = self.get_argument('log')
+        log_id = self.get_argument('log', strip=False)
+        if not validate_log_id(log_id):
+            raise tornado.web.HTTPError(400, 'Invalid Parameter')
         log_file_name = get_log_filename(log_id)
         download_type = self.get_argument('type', default='0')
         if not os.path.exists(log_file_name):
@@ -137,10 +139,11 @@ class DownloadHandler(TornadoRequestHandlerBase):
             self.set_header('Content-Disposition', 'attachment; filename='+kml_dl_file_name)
             with open(kml_file_name, 'rb') as kml_file:
                 while True:
-                    data = kml_file.read(4096)
+                    data = kml_file.read(64 * 1024)
                     if not data:
                         break
                     self.write(data)
+                    await self.flush()
                 self.finish()
 
         elif download_type == '3': # download the non-default parameters
@@ -230,9 +233,9 @@ class DownloadHandler(TornadoRequestHandlerBase):
                 os.path.basename(log_file_name)))
             with open(log_file_name, 'rb') as log_file:
                 while True:
-                    data = log_file.read(4096)
+                    data = log_file.read(64 * 1024)
                     if not data:
                         break
                     self.write(data)
+                    await self.flush()
                 self.finish()
-

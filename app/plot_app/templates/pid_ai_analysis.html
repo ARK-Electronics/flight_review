@@ -1,5 +1,6 @@
 {# PID-page AI tuning panel. Included from index.html when is_pid_analysis_page. #}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/plot_app/static/js/vendor/purify.min.js"></script>
 
 <div id="pid-ai-panel" class="pid-ai-panel">
     <div class="pid-ai-header">
@@ -59,8 +60,8 @@
 <script>
 {% include "analysis_jobs.js" %}
 (function () {
-    const LOG_ID = "{{ log_id }}";
-    const DEFAULT_MODEL = "{{ default_model }}";
+    const LOG_ID = {{ log_id | tojson }};
+    const DEFAULT_MODEL = {{ default_model | tojson }};
     const DEFAULT_EFFORT = "medium";
     const output = document.getElementById('pid-ai-output');
     const runBtn = document.getElementById('pid-ai-run-btn');
@@ -92,7 +93,7 @@
             <div class="pid-ai-error">
                 <i class="fa-solid fa-circle-exclamation"></i>
                 <strong>Analysis failed.</strong>
-                <div>${message}</div>
+                <div>${flightSecurity.escapeHTML(message)}</div>
             </div>`;
         if (rerunBtn) rerunBtn.classList.remove('d-none');
         setBusy(false);
@@ -103,21 +104,21 @@
         if (data.data_summary) {
             const ds = data.data_summary;
             html += '<div class="pid-ai-summary">';
-            if (ds.mav_type) html += `<span>${ds.mav_type}</span>`;
+            if (ds.mav_type) html += `<span>${flightSecurity.escapeHTML(ds.mav_type)}</span>`;
             if (typeof ds.num_step_responses === 'number') {
                 html += `<span>${ds.num_step_responses} step responses</span>`;
             }
             if (ds.has_rate) html += '<span>Rate loop</span>';
             if (ds.has_attitude) html += '<span>Attitude loop</span>';
-            if (data.model) html += `<span class="pid-ai-model">${data.model}</span>`;
-            if (data.effort) html += `<span>${data.effort}</span>`;
+            if (data.model) html += `<span class="pid-ai-model">${flightSecurity.escapeHTML(data.model)}</span>`;
+            if (data.effort) html += `<span>${flightSecurity.escapeHTML(data.effort)}</span>`;
             if (data.cached) html += '<span class="pid-ai-cached">Cached</span>';
             html += '</div>';
         }
         if (data.analysis && typeof marked !== 'undefined') {
-            html += '<div class="pid-ai-markdown">' + marked.parse(data.analysis) + '</div>';
+            html += '<div class="pid-ai-markdown">' + flightSecurity.renderMarkdown(data.analysis) + '</div>';
         } else if (data.analysis) {
-            html += '<pre class="pid-ai-markdown">' + data.analysis + '</pre>';
+            html += '<pre class="pid-ai-markdown">' + flightSecurity.escapeHTML(data.analysis) + '</pre>';
         }
         output.innerHTML = html;
         if (runBtn) runBtn.classList.add('d-none');
@@ -149,7 +150,7 @@
     if (runBtn) runBtn.addEventListener('click', runAnalysis);
     if (rerunBtn) rerunBtn.addEventListener('click', runAnalysis);
 
-    fetch('/ai_analysis/models', { method: 'GET' })
+    flightSecurity.fetch('/ai_analysis/models', { method: 'GET' })
         .then(response => response.json())
         .then(data => {
             if (!modelSelect || !data || !Array.isArray(data.models) || data.models.length === 0) {
@@ -182,7 +183,7 @@
         })
         .catch(() => {});
 
-    fetch('/ai_analysis/pid?log=' + encodeURIComponent(LOG_ID), { method: 'GET' })
+    flightSecurity.fetch('/ai_analysis/pid?log=' + encodeURIComponent(LOG_ID), { method: 'GET' })
         .then(response => response.json())
         .then(data => {
             if (data && data.cached) {

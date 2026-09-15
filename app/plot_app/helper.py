@@ -65,7 +65,7 @@ def validate_log_id(log_id):
     if _check_log_id_is_filename():
         return True
     # we are a bit less restrictive than the actual format
-    if re.match(r'^[0-9a-zA-Z_-]+$', log_id):
+    if isinstance(log_id, str) and re.fullmatch(r'[0-9a-zA-Z_-]+', log_id):
         return True
     return False
 
@@ -79,6 +79,8 @@ def get_log_filename(log_id):
     if _check_log_id_is_filename():
         return log_id
 
+    if not validate_log_id(log_id):
+        raise ValueError('Invalid log ID')
     base = os.path.join(get_log_filepath(), log_id)
     # Prefer .ulg to keep legacy behavior stable.
     for ext in ('.ulg', '.bin', '.csv', '.bbl', '.txt'):
@@ -92,8 +94,12 @@ def get_log_filename_with_ext(log_id: str, ext: str) -> str:
     """Return the target log file path for a given id and extension."""
     if _check_log_id_is_filename():
         return log_id
+    if not validate_log_id(log_id):
+        raise ValueError('Invalid log ID')
     if not ext.startswith('.'):
         ext = '.' + ext
+    if ext not in ('.ulg', '.bin', '.csv', '.bbl', '.txt'):
+        raise ValueError('Unsupported log extension')
     return os.path.join(get_log_filepath(), log_id + ext)
 
 

@@ -72,12 +72,14 @@ $(function() { //on startup
         $.ajax({
             type: "POST",
             url: "/error_label",
-            data: JSON.stringify({ 'log' : "{{log_id}}", 'labels' : error_ids }),
+            data: JSON.stringify({ 'log' : {{ log_id | tojson }}, 'labels' : error_ids }),
+            headers: flightSecurity.xsrfHeaders(),
+            contentType: 'application/json',
             dataType: "json"
         });
     });
 
-    init_error_labels({{cur_err_ids}});
+    init_error_labels({{ cur_err_ids | tojson }});
 });
 
 var fragment_elements = new Map(); // Map with {"fragment-id", dom-element} items
@@ -92,14 +94,14 @@ function setupPlots() {
 	var plot_ids = [
 {% set comma = joiner(",") %}
 {% for cur_plot in plots %}
-	{{ comma() }} "{{ cur_plot.model_id }}"
+	{{ comma() }} {{ cur_plot.model_id | tojson }}
 {% endfor %}
 	];
 
 	var plot_fragments = [
 {% set comma = joiner(",") %}
 {% for cur_plot in plots %}
-	{{ comma() }} "{{ cur_plot.fragment }}"
+	{{ comma() }} {{ cur_plot.fragment | tojson }}
 {% endfor %}
 	];
 
@@ -120,9 +122,11 @@ function setupPlots() {
 		plot_views.push(plot_view);
 		index_of = plot_ids.indexOf(plot_view.model.id)
 		if (index_of >= 0) {
-			var a = $('<a id="'+plot_fragments[index_of]+'" '+
-					'style="position: absolute;z-index: 100;color: black;text-decoration-line: none;"' +
-					' href="#'+plot_fragments[index_of]+'"><big>&para;</big></a>');
+			var a = $('<a><big>&para;</big></a>').attr({
+				id: plot_fragments[index_of],
+				href: '#' + plot_fragments[index_of],
+				style: 'position: absolute;z-index: 100;color: black;text-decoration-line: none;'
+			});
 			$(plot_view.canvas_view.el).before(a);
 			fragment_elements.set(plot_fragments[index_of], a[0])
 

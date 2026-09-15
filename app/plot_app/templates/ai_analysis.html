@@ -11,7 +11,9 @@
     <link rel="icon" type="image/x-icon" href="plot_app/static/images/favicon.ico">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.8/dist/yeti/bootstrap.min.css" crossorigin="anonymous">
     <!-- Markdown rendering -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/plot_app/static/js/security.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="/plot_app/static/js/vendor/purify.min.js"></script>
     <!-- Syntax highlighting for code blocks -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -473,7 +475,7 @@ xai_model = grok-4.6</pre>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 {% include "analysis_jobs.js" %}
-    const LOG_ID = "{{ log_id }}";
+    const LOG_ID = {{ log_id | tojson }};
     let lastAnalysisData = null;
 
     function exportAnalysis() {
@@ -497,11 +499,11 @@ xai_model = grok-4.6</pre>
             md += '\n## Data Summary\n';
             md += `| Field | Value |\n|-------|-------|\n`;
             md += `| Duration | ${Math.round(ds.duration_s)}s |\n`;
-            md += `| Vehicle Type | ${ds.mav_type} |\n`;
-            md += `| Parameters | ${ds.num_parameters} |\n`;
+            md += `| Vehicle Type | ${flightSecurity.escapeHTML(ds.mav_type)} |\n`;
+            md += `| Parameters | ${flightSecurity.escapeHTML(ds.num_parameters)} |\n`;
             md += `| EKF Data | ${ds.has_ekf_data ? 'Yes' : 'No'} |\n`;
             md += `| PID Data | ${ds.has_pid_data ? 'Yes' : 'No'} |\n`;
-            md += `| Log Messages | ${ds.num_messages} |\n`;
+            md += `| Log Messages | ${flightSecurity.escapeHTML(ds.num_messages)} |\n`;
         }
 
         // Main analysis
@@ -569,7 +571,7 @@ xai_model = grok-4.6</pre>
                     <div class="error-message">
                         <i class="fa-solid fa-circle-exclamation" style="font-size:2em; margin-bottom:12px;"></i>
                         <h5>Analysis Failed</h5>
-                        <p>${body.error || 'Unknown error occurred'}</p>
+                        <p>${flightSecurity.escapeHTML(body.error || 'Unknown error occurred')}</p>
                     </div>
                 `;
                 document.getElementById('export-analysis-btn').classList.add('d-none');
@@ -581,7 +583,7 @@ xai_model = grok-4.6</pre>
                 <div class="error-message">
                     <i class="fa-solid fa-circle-exclamation" style="font-size:2em; margin-bottom:12px;"></i>
                     <h5>Connection Error</h5>
-                    <p>${error.message}</p>
+                    <p>${flightSecurity.escapeHTML(error.message)}</p>
                 </div>
             `;
             rerunBtn.classList.remove('d-none');
@@ -597,16 +599,16 @@ xai_model = grok-4.6</pre>
             const ds = data.data_summary;
             html += '<div class="data-summary">';
             html += `<span class="badge-info">Duration: ${Math.round(ds.duration_s)}s</span>`;
-            html += `<span class="badge-info">Type: ${ds.mav_type}</span>`;
-            html += `<span class="badge-info">Parameters: ${ds.num_parameters}</span>`;
+            html += `<span class="badge-info">Type: ${flightSecurity.escapeHTML(ds.mav_type)}</span>`;
+            html += `<span class="badge-info">Parameters: ${flightSecurity.escapeHTML(ds.num_parameters)}</span>`;
             html += `<span class="badge-info">EKF Data: ${ds.has_ekf_data ? 'Yes' : 'No'}</span>`;
             html += `<span class="badge-info">PID Data: ${ds.has_pid_data ? 'Yes' : 'No'}</span>`;
-            html += `<span class="badge-info">Messages: ${ds.num_messages}</span>`;
+            html += `<span class="badge-info">Messages: ${flightSecurity.escapeHTML(ds.num_messages)}</span>`;
             if (data.model) {
-                html += `<span class="model-badge">${data.model}</span>`;
+                html += `<span class="model-badge">${flightSecurity.escapeHTML(data.model)}</span>`;
             }
             if (data.effort) {
-                html += `<span class="badge-info">Effort: ${data.effort}</span>`;
+                html += `<span class="badge-info">Effort: ${flightSecurity.escapeHTML(data.effort)}</span>`;
             }
             if (data.cached) {
                 html += '<span class="cached-badge"><i class="fa-solid fa-database"></i> Cached</span>';
@@ -617,7 +619,7 @@ xai_model = grok-4.6</pre>
         // Main analysis content (markdown -> html)
         if (data.analysis) {
             html += '<div class="analysis-content">';
-            html += marked.parse(data.analysis);
+            html += flightSecurity.renderMarkdown(data.analysis);
             html += '</div>';
         }
 
@@ -631,7 +633,7 @@ xai_model = grok-4.6</pre>
                     </button>
                     <div class="collapse" id="reasoning-content">
                         <div class="reasoning-content">
-                            ${marked.parse(data.reasoning)}
+                            ${flightSecurity.renderMarkdown(data.reasoning)}
                         </div>
                     </div>
                 </div>
@@ -685,7 +687,7 @@ xai_model = grok-4.6</pre>
             effortSelect.value = DEFAULT_EFFORT;
         }
         if (!select) return;
-        fetch('/ai_analysis/models', { method: 'GET' })
+        flightSecurity.fetch('/ai_analysis/models', { method: 'GET' })
             .then(response => response.json())
             .then(data => {
                 if (!data || !Array.isArray(data.models) || data.models.length === 0) {
@@ -735,7 +737,7 @@ xai_model = grok-4.6</pre>
     loadModels();
 
     (function loadCachedAnalysis() {
-        fetch('/ai_analysis/api?log=' + encodeURIComponent(LOG_ID), {
+        flightSecurity.fetch('/ai_analysis/api?log=' + encodeURIComponent(LOG_ID), {
             method: 'GET',
         })
         .then(response => response.json())
@@ -819,7 +821,7 @@ xai_model = grok-4.6</pre>
                 } else {
                     bubble.className = 'ai-chat-bubble-assistant';
                     bubble.innerHTML = (typeof marked !== 'undefined')
-                        ? marked.parse(msg.content || '')
+                        ? flightSecurity.renderMarkdown(msg.content || '')
                         : escapeHtml(msg.content || '');
                     if (msg.model || msg.effort) {
                         const meta = document.createElement('div');
@@ -911,7 +913,7 @@ xai_model = grok-4.6</pre>
         });
         if (clearBtn) {
             clearBtn.addEventListener('click', () => {
-                fetch('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), {
+                flightSecurity.fetch('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), {
                     method: 'DELETE',
                 }).catch(() => {});
                 chatMessages = [];
@@ -919,7 +921,7 @@ xai_model = grok-4.6</pre>
             });
         }
 
-        fetch('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), { method: 'GET' })
+        flightSecurity.fetch('/ai_analysis/chat?log=' + encodeURIComponent(LOG_ID), { method: 'GET' })
             .then(response => response.json())
             .then(data => {
                 if (data && Array.isArray(data.messages) && data.messages.length) {

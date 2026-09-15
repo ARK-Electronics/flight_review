@@ -23,8 +23,9 @@
 		crossorigin=""></script>
 		<script src='//api.tiles.mapbox.com/mapbox.js/plugins/leaflet-omnivore/v0.3.1/leaflet-omnivore.min.js'></script>
 
-		{{ bokeh_css }}
-		{{ bokeh_js }}
+		{{ bokeh_css | safe }}
+		{{ bokeh_js | safe }}
+		<script src="/plot_app/static/js/security.js"></script>
 	</head>
 	<body>
 
@@ -85,7 +86,7 @@
 					{% endif %}
 					{% if current_user %}
 					<li class="nav-item">
-						<a class="nav-link" href="edit_entry?action=delete&log={{ log_id }}" onclick="return confirm('Are you sure you want to delete this log?');">Delete</a>
+						<a class="nav-link" href="edit_entry?action=delete&log={{ log_id }}">Delete</a>
 					</li>
 					{% endif %}
 					<li class="nav-item dropdown" id="navigation-menu">
@@ -99,7 +100,7 @@
 			{% for cur_plot in plots %}
 			{% set cur_title = cur_plot.title %}
 			{% set cur_fragment = cur_plot.fragment %}
-							<a class="dropdown-item" href="javascript:navigate('{{ cur_fragment }}');">{{ cur_title }}</a>
+							<a class="dropdown-item" href="#{{ cur_fragment }}" data-fragment="{{ cur_fragment }}" onclick="navigate(this.dataset.fragment); return false;">{{ cur_title }}</a>
 			{% endfor %}
 						</div>
 					</li>

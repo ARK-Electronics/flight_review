@@ -18,6 +18,21 @@ Set a random `COOKIE_SECRET` (at least 32 characters) in the hosting secret stor
 `python -c "import secrets; print(secrets.token_urlsafe(48))"` generates one.
 Rotation signs all existing users out. Never put the value in Git.
 
+Bokeh plot sessions use a separate signing key derived from `COOKIE_SECRET` and
+are bound to the browser's authenticated session. Share the ordinary log URL;
+URLs that supply `bokeh-session-id` or `bokeh-token` are rejected. Reload an open
+plot after signing in again or rotating the cookie key. Application POST requests
+require the `_xsrf` cookie and the matching form field or `X-XSRFToken` header;
+the bearer-authenticated support API validates its own credentials.
+
+Public registration always creates an unapproved, non-admin account. To bootstrap
+an administrator, register the intended account, then run
+`python set_admin.py <username>` from `/app` in the running service with its
+persistent database mounted.
+The command approves that account and grants administrator access. Existing
+administrator accounts keep their privileges. This security update invalidates
+older login cookies, so users must sign in again after deployment.
+
 Probes: port 8080, HTTP `/healthz` for liveness, `/readyz` for readiness.
 Use initial delay 30 seconds, interval 10 seconds, timeout 3 seconds and three
 failures. Readiness verifies the database schema and writable log storage.

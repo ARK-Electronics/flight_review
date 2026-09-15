@@ -74,7 +74,7 @@ def get_heading_html(ulog, px4_ulog, db_data, link_to_3d_page,
 
     if title_suffix != '': title_suffix = ' - ' + title_suffix
 
-    title_html = ("<table width='100%'><tr><td><h3>"+sys_name + px4_ulog.get_mav_type()+
+    title_html = ("<table width='100%'><tr><td><h3>"+sys_name + escape(px4_ulog.get_mav_type())+
                   title_suffix+"</h3></td><td align='right'>" + link_to_3d +
                   added_links+"</td></tr></table>")
     if db_data.description != '':
@@ -131,7 +131,7 @@ def get_info_table_html(ulog, px4_ulog, db_data, vehicle_data, vtol_states):
         if os_ver is not None:
             table_text_left.append(('OS Version', os_name + ', ' + os_ver))
 
-    table_text_left.append(('Estimator', px4_ulog.get_estimator()))
+    table_text_left.append(('Estimator', escape(px4_ulog.get_estimator())))
 
     table_text_left.append(('', '')) # spacing
 
@@ -559,7 +559,7 @@ def get_changed_parameters(ulog, plot_width):
         'colors': param_colors
         }
     source = ColumnDataSource(param_data)
-    formatter = HTMLTemplateFormatter(template='<font color="<%= colors %>"><%= value %></font>')
+    formatter = HTMLTemplateFormatter(template='<font color="<%- colors %>"><%- value %></font>')
     columns = [
         TableColumn(field="names", title="Name",
                     width=int(plot_width*0.2), sortable=False),

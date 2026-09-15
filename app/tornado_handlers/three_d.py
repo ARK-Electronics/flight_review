@@ -7,6 +7,7 @@ import os
 import sys
 import tornado.web
 import numpy as np
+from markupsafe import Markup
 
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
@@ -184,20 +185,21 @@ class ThreeDHandler(TornadoRequestHandlerBase):
 
         template = get_jinja_env().get_template(THREED_TEMPLATE)
         self.write(template.render(
-            flight_modes=flight_modes_str,
-            manual_control_setpoints=manual_control_setpoints_str,
+            # These literals contain only formatted numbers, ISO timestamps,
+            # and flight-mode names from the server's fixed lookup table.
+            flight_modes=Markup(flight_modes_str),
+            manual_control_setpoints=Markup(manual_control_setpoints_str),
             takeoff_altitude=takeoff_altitude,
             takeoff_longitude=takeoff_longitude,
             takeoff_latitude=takeoff_latitude,
-            position_data=position_data,
-            start_timestamp=start_timestamp_str,
-            boot_timestamp=boot_timestamp_str,
-            end_timestamp=end_timestamp_str,
-            attitude_data=attitude_data,
+            position_data=Markup(position_data),
+            start_timestamp=Markup(start_timestamp_str),
+            boot_timestamp=Markup(boot_timestamp_str),
+            end_timestamp=Markup(end_timestamp_str),
+            attitude_data=Markup(attitude_data),
             model_scale_factor=model_scale_factor,
             model_uri=model_uri,
             model_heading_rotation_deg=model_heading_rotation_deg,
             log_id=log_id,
             cesium_api_key=get_cesium_api_key(),
             cesium_enable_bing_aerial=get_cesium_enable_bing_aerial()))
-

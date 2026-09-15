@@ -6,8 +6,10 @@ from __future__ import print_function
 import os
 import sqlite3
 import sys
+from html import escape
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 import tornado.web
 
 # this is needed for the following imports
@@ -18,7 +20,8 @@ from config import get_db_connection, get_db_filename
 #pylint: disable=abstract-method,relative-beyond-top-level,import-outside-toplevel
 
 _ENV = Environment(loader=FileSystemLoader(
-    os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app/templates')))
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app/templates')),
+    autoescape=select_autoescape())
 
 def get_jinja_env():
     """ get the jinja2 Environment object """
@@ -37,6 +40,10 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
     """
     def prepare(self):
         """Protect support imports on legacy log read/download routes too."""
+        if self.request.method == 'GET':
+            # Some plot handlers render their templates directly. Establish a
+            # token here as well so their browser POSTs can supply X-XSRFToken.
+            _ = self.xsrf_token
         from support_access import require_support_access
         log_id = self.get_query_argument('log', default='')
         if log_id:
@@ -54,15 +61,15 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
             pass
 
     def get_current_user(self):
-        user = self.get_secure_cookie("user")
-        if user:
-            return user.decode('utf-8')
-        return None
+        from .security import authenticated_username
+        return authenticated_username(self)
 
     def render_jinja(self, template_name, **kwargs):
         """Render a Jinja template and write the result."""
         template = get_jinja_env().get_template(template_name)
         kwargs['current_user'] = self.get_current_user()
+        kwargs['xsrf_form_html'] = Markup(self.xsrf_form_html())
+        kwargs['xsrf_token'] = self.xsrf_token.decode('ascii')
         # Auto-inject is_admin for navbar rendering
         if 'is_admin' not in kwargs and kwargs['current_user']:
             try:
@@ -89,7 +96,7 @@ class TornadoRequestHandlerBase(tornado.web.RequestHandler):
         if 'exc_info' in kwargs:
             e = kwargs["exc_info"][1]
             if isinstance(e, CustomHTTPError) and e.error_message:
-                error_message = ': '+e.error_message
+                error_message = ': '+escape(str(e.error_message))
         self.write(html_template.format(status_code=status_code,
                                         error_message=error_message))
 

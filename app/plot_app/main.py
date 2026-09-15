@@ -21,30 +21,27 @@ from ekf_analysis_plots import get_ekf_analysis_plots
 from statistics_plots import StatisticsPlots
 
 from logs.px4_ulog_compat import PX4ULogCompat
+from tornado_handlers.common import get_jinja_env
+from tornado_handlers.security import decode_session_cookie
+from tornado_handlers.upload import process_pending_log
 
-import tornado.web
 
 #pylint: disable=invalid-name, redefined-outer-name
 
 
 GET_arguments = curdoc().session_context.request.arguments
 
-# Get current user
+# Use the same escaping and revocable sessions as the HTTP routes.
+curdoc().template = get_jinja_env().get_template('index.html')
 user = None
-try:
-    request = curdoc().session_context.request
-    if hasattr(request, 'cookies') and 'user' in request.cookies:
-        cookie_val = request.cookies['user']
-        # Handle Morsel object if necessary
-        if hasattr(cookie_val, 'value'):
-            cookie_val = cookie_val.value
-
-        secret = os.environ.get('COOKIE_SECRET', 'change_me_to_a_random_string')
-        user = tornado.web.decode_signed_value(secret, 'user', cookie_val)
-        if user:
-            user = user.decode('utf-8')
-except Exception:
-    pass
+request = curdoc().session_context.request
+if hasattr(request, 'cookies') and 'user' in request.cookies:
+    cookie_val = request.cookies['user']
+    if hasattr(cookie_val, 'value'):
+        cookie_val = cookie_val.value
+    secret = os.environ.get('COOKIE_SECRET', '')
+    if secret:
+        user = decode_session_cookie(cookie_val, secret)
 
 curdoc().template_variables['current_user'] = user
 
@@ -154,7 +151,6 @@ else:
                     parent_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..')
                     if parent_dir not in sys.path:
                         sys.path.insert(0, parent_dir)
-                    from tornado_handlers.upload import process_pending_log
                     if process_pending_log(log_id):
                         pending = False
                 except Exception as e:
@@ -221,15 +217,12 @@ else:
                 # Check if user can delete
                 can_delete = False
                 if user:
-                    cur.execute("SELECT IsAdmin, Email FROM Users WHERE Username=?", (user,))
+                    cur.execute("SELECT IsAdmin FROM Users WHERE Username=?", (user,))
                     row = cur.fetchone()
                     if row:
                         is_admin = row[0]
-                        user_email = row[1]
 
                         if is_admin:
-                            can_delete = True
-                        elif user_email and db_data.email and user_email == db_data.email:
                             can_delete = True
                         elif db_data.uploader and user == db_data.uploader:
                             can_delete = True
@@ -368,7 +361,7 @@ else:
 
         title = 'Error'
 
-        div = Div(text="<h3>Error</h3><p>"+error_message+"</p>", width=int(plot_width*0.9))
+        div = Div(text="<h3>Error</h3><p>"+escape(error_message)+"</p>", width=int(plot_width*0.9))
         plots = [column(div, width=int(plot_width*0.9))]
 
     # layout
