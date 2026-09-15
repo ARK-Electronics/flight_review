@@ -24,3 +24,5 @@ data/certbot
 app/private_key/private_key.pem
 
 .env
+
+node_modules/

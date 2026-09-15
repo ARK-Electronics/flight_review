@@ -67,7 +67,7 @@
         var table = $('#logs_table').DataTable({
 {% if initial_search %}
             "search": {
-                "search": {{ initial_search }}
+                "search": {{ initial_search | tojson }}
             },
 {% endif %}
             "pageLength": 25,

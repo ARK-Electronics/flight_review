@@ -1,0 +1,33 @@
+{% include "header.html" %}
+
+<div class="container" style="margin-top: 50px; margin-bottom: 50px;">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="mb-0">Approve account</h2>
+                </div>
+                <div class="card-body">
+                    <p><strong>Username:</strong> {{ username }}</p>
+                    <p><strong>Email:</strong> {{ email }}</p>
+                    {% if approved %}
+                    <div class="alert alert-success">This account is approved.</div>
+                    <a href="/admin" class="btn btn-primary">Manage users</a>
+                    {% else %}
+                    <p>Approve this account to allow the user to sign in and upload logs.</p>
+                    <form method="post" action="/approve_user">
+                        {{ xsrf_form_html }}
+                        <input type="hidden" name="token" value="{{ token }}">
+                        <button type="submit" class="btn btn-primary">Approve account</button>
+                        <a href="/admin" class="btn btn-outline-secondary">Cancel</a>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include "footer.html" %}
+</body>
+</html>

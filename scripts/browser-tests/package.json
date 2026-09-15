@@ -1,0 +1,11 @@
+{
+  "name": "flight-review-browser-security-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test security.test.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0",
+    "marked": "18.0.13"
+  }
+}

@@ -14,7 +14,11 @@ separately at the infrastructure level.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import json
 import os
+import sqlite3
 import sys
 import time
 from collections import defaultdict, deque
@@ -22,9 +26,64 @@ import pickle
 import tempfile
 import weakref
 from typing import Deque, Dict, Optional, Tuple
+from tornado.web import decode_signed_value
 
 # Make plot_app importable for the worker process too.
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), '../plot_app'))
+from config import get_db_filename
+
+
+SESSION_MAX_AGE_DAYS = 7
+
+
+def session_cookie_value(username, password_hash, cookie_secret):
+    """Bind a signed session to the current credential without exposing its hash."""
+    if isinstance(cookie_secret, str):
+        cookie_secret = cookie_secret.encode('utf-8')
+    credential = hmac.new(cookie_secret, password_hash.encode('utf-8'),
+                          hashlib.sha256).hexdigest()
+    return json.dumps([username, credential])
+
+
+def decode_session_cookie(signed_value, cookie_secret):
+    """Validate the session and reject revoked, deleted, or unapproved accounts.
+
+    Password changes invalidate the credential binding. An account recreated
+    under the same username has a newly salted password hash and cannot inherit
+    old cookies. Legacy username-only cookies require a fresh login.
+    """
+    value = decode_signed_value(cookie_secret, 'user', signed_value,
+                                max_age_days=SESSION_MAX_AGE_DAYS)
+    if not value:
+        return None
+    try:
+        payload = json.loads(value)
+        if not isinstance(payload, list) or len(payload) != 2:
+            return None
+        username, credential = payload
+        if (not isinstance(username, str) or not isinstance(credential, str)
+                or not credential.isascii()):
+            return None
+    except (ValueError, TypeError, UnicodeDecodeError):
+        return None
+
+    con = sqlite3.connect(get_db_filename())
+    try:
+        row = con.execute('SELECT PasswordHash, Approved FROM Users WHERE Username=?',
+                          (username,)).fetchone()
+    finally:
+        con.close()
+    if not row or not row[1] or not row[0]:
+        return None
+    expected = json.loads(session_cookie_value(
+        username, row[0], cookie_secret))[1]
+    return username if hmac.compare_digest(credential, expected) else None
+
+
+def authenticated_username(handler):
+    """Return the approved account for the request's current browser session."""
+    return decode_session_cookie(handler.get_cookie('user'),
+                                 handler.application.settings['cookie_secret'])
 
 
 # ---------------------------------------------------------------------------

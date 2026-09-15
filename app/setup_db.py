@@ -221,5 +221,18 @@ with con:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_key_hash "
         "ON Users(ApiKeyHash) WHERE ApiKeyHash != ''")
 
-con.close()
+    # Usernames are persisted as log/job/chat owners. Deleted accounts must
+    # never let a new registration inherit the former owner's private data.
+    cur.execute("CREATE TABLE IF NOT EXISTS DeletedUsers (Username TEXT PRIMARY KEY)")
+    cur.execute(
+        "INSERT OR IGNORE INTO DeletedUsers (Username) "
+        "SELECT DISTINCT Uploader FROM Logs WHERE Uploader != '' "
+        "AND NOT EXISTS (SELECT 1 FROM Users WHERE Username=Logs.Uploader)")
+    if cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                   "AND name='AnalysisJobs'").fetchone():
+        cur.execute(
+            "INSERT OR IGNORE INTO DeletedUsers (Username) "
+            "SELECT DISTINCT Username FROM AnalysisJobs WHERE Username != '' "
+            "AND NOT EXISTS (SELECT 1 FROM Users WHERE Users.Username=AnalysisJobs.Username)")
 
+con.close()

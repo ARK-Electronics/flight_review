@@ -9,3 +9,4 @@ app/backups
 screenshots
 work
 .venv
+**/node_modules

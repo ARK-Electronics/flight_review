@@ -13,7 +13,6 @@ import sys
 import traceback
 import uuid
 import binascii
-from concurrent.futures import BrokenExecutor
 import tornado.escape
 import tornado.web
 from tornado.ioloop import IOLoop
@@ -32,7 +31,6 @@ from overview_generator import generate_overview_img_from_id
 
 from logs.px4_ulog_compat import PX4ULogCompat
 from logs.loader import UnsupportedLogFormat
-from logs.ulog_parse import parse_ulog_header
 
 
 #pylint: disable=relative-beyond-top-level
@@ -41,7 +39,7 @@ from .common import CustomHTTPError, generate_db_data_from_log_file, \
 from .send_email import (
     send_notification_email, send_flightreport_email,
     send_admin_notification_email)
-from .multipart_streamer import MultiPartStreamer
+from .multipart_streamer import MultiPartStreamer, ParseError, SizeLimitError
 from .security import (
     parse_log_bounded, ParserTimeout, ParserCrashed,
     get_rate_limiter, client_ip,
@@ -221,8 +219,17 @@ class UploadHandler(TornadoRequestHandlerBase):
         """ initialize the instance """
         self.multipart_streamer = None
 
+    def check_xsrf_cookie(self):
+        """Only explicit API credentials may bypass browser XSRF protection."""
+        api_user = authenticate_request_api_key(self)
+        if api_user:
+            self.current_user = api_user
+            return
+        super().check_xsrf_cookie()
+
     def prepare(self):
         """ called before a new request """
+        super().prepare()
         if self.request.method.upper() == 'POST':
             # Uploads require a registered & approved account. Reject here,
             # before the request body is streamed, so anonymous clients don't
@@ -231,18 +238,15 @@ class UploadHandler(TornadoRequestHandlerBase):
             #
             # Machine clients (logloader) authenticate with a per-account API
             # key via Authorization / X-API-Key / ?api_key= (see api_key.py).
-            # Use get_current_user() (not the property) so pylint does not treat
-            # a later current_user assignment as a prior-definition conflict.
-            username = self.get_current_user()
-            if not username:
-                api_user = authenticate_request_api_key(self)
-                if api_user:
-                    # Bind the request to the key's owner for the rest of the
-                    # handler (Uploader column, approval checks, logging).
-                    self.current_user = api_user
-                    username = api_user
-                    _upload_log.info('api_key_auth ip=%s uploader=%s',
-                                     client_ip(self), username)
+            username = self.current_user
+            api_user = authenticate_request_api_key(self)
+            if api_user:
+                # Bind the request to the key's owner for the rest of the
+                # handler (Uploader column, approval checks, logging).
+                self.current_user = api_user
+                username = api_user
+                _upload_log.info('api_key_auth ip=%s uploader=%s',
+                                 client_ip(self), username)
 
             if not username or not _is_uploader_approved(username):
                 _upload_log.warning('rejected_unauthenticated ip=%s uploader=%s',
@@ -252,17 +256,39 @@ class UploadHandler(TornadoRequestHandlerBase):
                          '(login session or API key). '
                          'Please log in or provide a valid API key.')
 
+            # Charge rejected/aborted uploads too, before accepting their body.
+            client_addr = client_ip(self)
+            limiter = get_rate_limiter()
+            if not limiter.check('upload_min', client_addr, UPLOAD_RATE_LIMIT_PER_MINUTE, 60):
+                raise CustomHTTPError(429, 'Too many uploads, please slow down.')
+            if not limiter.check('upload_hr', client_addr, UPLOAD_RATE_LIMIT_PER_HOUR, 3600):
+                raise CustomHTTPError(429, 'Hourly upload quota exceeded.')
+            if not self.request.headers.get('Content-Type', '').lower().startswith(
+                    'multipart/form-data;'):
+                raise CustomHTTPError(400, 'Expected multipart/form-data')
+
             try:
                 total = int(self.request.headers.get("Content-Length", "0"))
-            except KeyError:
-                total = 0
-
-            self.multipart_streamer = MultiPartStreamer(total)
+                self.multipart_streamer = MultiPartStreamer(total)
+            except ValueError as exc:
+                raise CustomHTTPError(400, 'Invalid Content-Length') from exc
+            except SizeLimitError as exc:
+                raise CustomHTTPError(413, 'Upload body exceeds the size limit') from exc
 
     def data_received(self, chunk):
         """ called whenever new data is received """
+        if self.multipart_streamer and not self._finished:
+            try:
+                self.multipart_streamer.data_received(chunk)
+            except (ParseError, SizeLimitError) as exc:
+                self.multipart_streamer.release_parts()
+                self.send_error(413 if isinstance(exc, SizeLimitError) else 400)
+
+    def on_connection_close(self):
+        """Discard temporary files when a client abandons a streamed upload."""
         if self.multipart_streamer:
-            self.multipart_streamer.data_received(chunk)
+            self.multipart_streamer.release_parts()
+        super().on_connection_close()
 
     def get(self, *args, **kwargs):
         """ GET request callback """
@@ -304,17 +330,13 @@ class UploadHandler(TornadoRequestHandlerBase):
 
     async def post(self, *args, **kwargs):
         """ POST request callback """
-        # Per-IP rate limit (in-process; also configure edge limits in nginx)
+        if self._finished:
+            return
         client_addr = client_ip(self)
-        limiter = get_rate_limiter()
-        if not limiter.check('upload_min', client_addr, UPLOAD_RATE_LIMIT_PER_MINUTE, 60):
-            _upload_log.warning('rate_limited ip=%s window=1m', client_addr)
-            raise CustomHTTPError(429, 'Too many uploads, please slow down.')
-        if not limiter.check('upload_hr', client_addr, UPLOAD_RATE_LIMIT_PER_HOUR, 3600):
-            _upload_log.warning('rate_limited ip=%s window=1h', client_addr)
-            raise CustomHTTPError(429, 'Hourly upload quota exceeded.')
 
         if self.multipart_streamer:
+            new_file_name = None
+            log_persisted = False
             try:
                 self.multipart_streamer.data_complete()
                 form_data = self.multipart_streamer.get_values(
@@ -326,6 +348,8 @@ class UploadHandler(TornadoRequestHandlerBase):
                     form_data.update(description=b'Support log', email=b'', type=b'personal',
                                      source=b'support-api', public=b'false',
                                      allowForAnalysis=b'false', redirect=b'false')
+                if 'description' not in form_data or 'email' not in form_data:
+                    raise CustomHTTPError(400, 'Missing upload fields')
                 description = escape(form_data['description'].decode("utf-8"))
                 email = form_data['email'].decode("utf-8")
                 print(f"UploadHandler: extracted email '{email}'", flush=True)
@@ -517,37 +541,13 @@ class UploadHandler(TornadoRequestHandlerBase):
                             400,
                             'Log parsing took too long; the file may be '
                             'corrupt or unsupported.') from e
-                    except (ParserCrashed, ULogException, BrokenExecutor) as parse_err:
-                        # ParserCrashed / BrokenExecutor: worker died (fork+OOM
-                        # used to surface as BrokenProcessPool on recv).
-                        # ULogException from MemoryError: pyulog ran out of RAM
-                        # on FIFO-heavy data. Header-only is tiny and still
-                        # gives vehicle / software metadata so the upload can
-                        # succeed; plots load later via the capped parser.
-                        is_oom = isinstance(parse_err, (ParserCrashed, BrokenExecutor)) or \
-                            isinstance(parse_err.__cause__, MemoryError)
-                        if isinstance(parse_err, ULogException) and not is_oom:
-                            raise
-                        if not ulog_file_name.endswith('.ulg'):
-                            raise CustomHTTPError(
-                                400,
-                                'Log parser failed unexpectedly on this file.'
-                            ) from parse_err
-                        _upload_log.error(
-                            'parse_oom ip=%s uploader=%s id=%s size=%s err=%s; '
-                            'retrying header-only',
-                            client_addr, uploader_username or '-',
-                            log_id, upload_size, type(parse_err).__name__)
-                        try:
-                            ulog = parse_ulog_header(ulog_file_name)
-                        except Exception as header_err:
-                            raise CustomHTTPError(
-                                400,
-                                'This log is too large to parse on the '
-                                'server. Try disabling high-rate FIFO '
-                                'logging (sensor_accel_fifo / '
-                                'sensor_gyro_fifo) or upload a shorter '
-                                'log.') from header_err
+                    except ParserCrashed as parse_err:
+                        # Header-only fallbacks already run inside the worker.
+                        # Never retry an untrusted file in the web process after
+                        # the isolated worker exhausted its resource budget.
+                        raise CustomHTTPError(
+                            400, 'Log parser failed; the file may be too large or corrupt.'
+                        ) from parse_err
 
                 # put additional data into a DB
                 con = get_db_connection()
@@ -571,6 +571,7 @@ class UploadHandler(TornadoRequestHandlerBase):
                         vehicle_name = vehicle_data.name
 
                     con.commit()
+                    log_persisted = True
                     cur.close()
                 finally:
                     con.close()
@@ -676,6 +677,12 @@ class UploadHandler(TornadoRequestHandlerBase):
             except CustomHTTPError:
                 raise
 
+            except (ParseError, UnicodeDecodeError) as exc:
+                raise CustomHTTPError(400, 'Invalid multipart upload') from exc
+
+            except SizeLimitError as exc:
+                raise CustomHTTPError(413, 'Upload field exceeds the size limit') from exc
+
             except ULogException as e:
                 if isinstance(e.__cause__, MemoryError):
                     raise CustomHTTPError(
@@ -695,3 +702,8 @@ class UploadHandler(TornadoRequestHandlerBase):
 
             finally:
                 self.multipart_streamer.release_parts()
+                if new_file_name and not log_persisted:
+                    try:
+                        os.unlink(new_file_name)
+                    except FileNotFoundError:
+                        pass

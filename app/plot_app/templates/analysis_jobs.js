@@ -3,7 +3,7 @@ async function flightAnalysisRequest(url, options) {
     const key = 'flight-analysis:' + url;
     let jobId = sessionStorage.getItem(key);
     if (!jobId) {
-        const response = await fetch(url, options);
+        const response = await flightSecurity.fetch(url, options);
         if (response.status !== 202) return response;
         jobId = (await response.json()).job_id;
         sessionStorage.setItem(key, jobId);
@@ -13,12 +13,12 @@ async function flightAnalysisRequest(url, options) {
     cancel.type = 'button';
     cancel.className = 'btn btn-outline-secondary';
     cancel.textContent = 'Cancel analysis';
-    cancel.onclick = async () => { await fetch(jobUrl, {method: 'DELETE'}); };
+    cancel.onclick = async () => { await flightSecurity.fetch(jobUrl, {method: 'DELETE'}); };
     const container = document.getElementById('pid-ai-panel') || document.querySelector('main') || document.body;
     container.appendChild(cancel);
     try {
         while (true) {
-            const poll = await fetch(jobUrl, {cache: 'no-store'});
+            const poll = await flightSecurity.fetch(jobUrl, {cache: 'no-store'});
             if (!poll.ok) {
                 if (poll.status === 404) sessionStorage.removeItem(key);
                 return poll;

@@ -13,11 +13,11 @@
     </div>
   {% endif %}
 
-{{ title_html }}
-{{ hardfault_html }}
-{{ info_table_html }}
-{{ corrupt_log_html }}
-{{ error_labels_html }}
+{{ title_html | safe }}
+{{ hardfault_html | safe }}
+{{ info_table_html | safe }}
+{{ corrupt_log_html | safe }}
+{{ error_labels_html | safe }}
 
 {% if is_pid_analysis_page is defined and is_pid_analysis_page %}
 {% include 'pid_ai_analysis.html' %}
@@ -29,12 +29,12 @@
     <div id="mapid"></div>
 
     <script>
-      var pos_datas = {{ pos_datas }}; // list of [lat, lon] coordinates
-      var pos_flight_modes = {{ pos_flight_modes }}; // list of [color, index of pos_datas]
+      var pos_datas = {{ pos_datas | safe }}; // list of [lat, lon] coordinates
+      var pos_flight_modes = {{ pos_flight_modes | safe }}; // list of [color, index of pos_datas]
       var waypoint_bounds = [];
 
       var mymap = L.map('mapid').setView([pos_datas[0][0], pos_datas[0][1]],15);
-      var mapboxAccessToken = '{{ mapbox_api_access_token }}'.trim();
+      var mapboxAccessToken = {{ mapbox_api_access_token | tojson }}.trim();
 
       var baseMaps = {};
 
@@ -98,9 +98,9 @@
     </div>
 {% endif %}
 
-{{ plot_div|indent(8) }}
+{{ plot_div | safe | indent(8) }}
 
-{{ additional_info }}
+{{ additional_info | safe }}
 
 {% endif %} {# internal_error #}
 

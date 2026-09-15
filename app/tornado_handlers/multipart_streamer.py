@@ -145,6 +145,7 @@ class TemporaryFileStreamedPart(StreamedPart):
         """
         super().__init__(streamer, headers)
         self.is_moved = False
+        self.is_released = False
         self.is_finalized = False
         self.f_out = tempfile.NamedTemporaryFile(dir=tmp_dir, delete=False)
 
@@ -185,9 +186,13 @@ class TemporaryFileStreamedPart(StreamedPart):
         method does nothing. Otherwise it closes the temporary file and deletes
         it from disk."""
         try:
-            if not self.is_moved:
+            if not self.is_moved and not self.is_released:
                 self.f_out.close()
-                os.unlink(self.f_out.name)
+                try:
+                    os.unlink(self.f_out.name)
+                except FileNotFoundError:
+                    pass
+                self.is_released = True
         finally:
             super().release()
 
@@ -229,7 +234,8 @@ class MultiPartStreamer:
     # be parsed without a valid encoding.
     header_encoding = "UTF-8"
 
-    def __init__(self, total):
+    def __init__(self, total, max_size=500 * 1024 * 1024, max_parts=32,
+                 max_header_size=16 * 1024, max_field_size=10 * 1024):
         """Create a new PostDataStreamer
 
         :param total: Total number of bytes in the stream. This is what the http
@@ -244,6 +250,14 @@ class MultiPartStreamer:
         self.total = total
         self.received = 0
         self.part = None
+        self.max_size = max_size
+        self.max_parts = max_parts
+        self.max_header_size = max_header_size
+        self.max_field_size = max_field_size
+        self.header_size = 0
+        self.complete = False
+        if total < 0 or total > max_size:
+            raise SizeLimitError("Upload body exceeds the size limit")
 
     def _get_raw_header(self, data):
         """Return raw header data.
@@ -288,6 +302,8 @@ class MultiPartStreamer:
         """Internal method called when a new part is started in the stream.
 
         :param headers: A dict of headers as returned by parse_header."""
+        if len(self.parts) >= self.max_parts:
+            raise SizeLimitError("Too many multipart fields")
         self.part = self.create_part(headers)
         assert isinstance(self.part, StreamedPart)
         self.parts.append(self.part)
@@ -297,6 +313,8 @@ class MultiPartStreamer:
 
         :param data: Raw data for the current part."""
         # noinspection PyProtectedMember
+        if not self.part.is_file() and self.part.size + len(data) > self.max_field_size:
+            raise SizeLimitError("Multipart field exceeds the size limit")
         self.part._size += len(data)
         self.part.feed(data)
 
@@ -319,60 +337,78 @@ class MultiPartStreamer:
         This method may raise a ParseError if the received data is malformed.
         """
         self.received += len(chunk)
+        if self.received > self.max_size:
+            raise SizeLimitError("Upload body exceeds the size limit")
         self.on_progress(self.received, self.total)
+        if self.complete:
+            return  # MIME epilogue; never allocate another part.
         self.buf += chunk
 
-        if not self.delimiter:
-            self.delimiter, self.buf = self._get_raw_header(self.buf)
-            if self.delimiter:
-                self.delimiter += self.SEP
-                self.dlen = len(self.delimiter)
-            elif len(self.buf) > 1000:
-                raise ParseError("Cannot find multipart delimiter")
-            else:
+        if self.delimiter is None:
+            delimiter, tail = self._get_raw_header(self.buf)
+            if delimiter is None:
+                if len(self.buf) > 202:
+                    raise ParseError("Invalid multipart delimiter")
                 return
+            if (not delimiter.startswith(b"--") or not 3 <= len(delimiter) <= 202
+                    or any(byte < 32 or byte > 126 for byte in delimiter)):
+                raise ParseError("Invalid multipart delimiter")
+            self.delimiter = delimiter
+            self.dlen = len(delimiter)
+            self.buf = tail
 
-        while True:
+        marker = self.SEP + self.delimiter
+        while not self.complete:
             if self.in_data:
-                if len(self.buf) > 3 * self.dlen:
-                    idx = self.buf.find(self.SEP + self.delimiter)
-                    if idx >= 0:
-                        self._feed_part(self.buf[:idx])
-                        self._end_part()
-                        self.buf = self.buf[idx + len(self.SEP + self.delimiter):]
-                        self.in_data = False
-                    else:
-                        limit = len(self.buf) - 2 * self.dlen
-                        self._feed_part(self.buf[:limit])
-                        self.buf = self.buf[limit:]
-                        return
-                else:
+                idx = self.buf.find(marker)
+                if idx < 0:
+                    # Keep only enough bytes for a boundary spanning chunks.
+                    keep = len(marker) + 2
+                    if len(self.buf) > keep:
+                        self._feed_part(self.buf[:-keep])
+                        self.buf = self.buf[-keep:]
                     return
-            if not self.in_data:
-                while True:
-                    header, self.buf = self._get_raw_header(self.buf)
-                    if header == b"":
-                        assert self.delimiter
-                        self.in_data = True
-                        self._begin_part(self.headers)
-                        self.headers = []
-                        break
-
-                    if header:
+                end = idx + len(marker)
+                if len(self.buf) < end + 2:
+                    return
+                suffix = self.buf[end:end + 2]
+                if suffix not in (self.SEP, b"--"):
+                    # A boundary-like byte sequence inside the file is data.
+                    self._feed_part(self.buf[:idx + 2])
+                    self.buf = self.buf[idx + 2:]
+                    continue
+                self._feed_part(self.buf[:idx])
+                self._end_part()
+                self.buf = self.buf[end + 2:]
+                self.in_data = False
+                self.header_size = 0
+                if suffix == b"--":
+                    self.complete = True
+                    self.buf = b""
+                    return
+            else:
+                header, tail = self._get_raw_header(self.buf)
+                header_length = len(self.buf) if header is None else len(header) + self.L_SEP
+                if self.header_size + header_length > self.max_header_size:
+                    raise SizeLimitError("Multipart headers exceed the size limit")
+                if header is None:
+                    return
+                self.buf = tail
+                self.header_size += header_length
+                if header == b"":
+                    self._begin_part(self.headers)
+                    self.headers = []
+                    self.in_data = True
+                else:
+                    try:
                         self.headers.append(self._parse_header(header))
-                    else:
-                        # Header is None, not enough data yet
-                        return
+                    except UnicodeDecodeError as exc:
+                        raise ParseError("Invalid multipart header encoding") from exc
 
     def data_complete(self):
-        """Call this after the last receive() call, e.g. when all data arrived for the form.
-
-        You MUST call this before using the parts."""
-        if self.in_data:
-            idx = self.buf.rfind(self.SEP + self.delimiter[:-2])
-            if idx > 0:
-                self._feed_part(self.buf[:idx])
-            self._end_part()
+        """Reject truncated bodies before any uploaded file can be committed."""
+        if not self.complete:
+            raise ParseError("Incomplete multipart body")
 
     def create_part(self, headers):
         """Called when a new part needs to be created.
@@ -390,6 +426,7 @@ class MultiPartStreamer:
          This method will call the release() method on all parts created for the stream."""
         for part in self.parts:
             part.release()
+        self.buf = b""
 
     def get_parts_by_name(self, part_name):
         """Get a parts by name.

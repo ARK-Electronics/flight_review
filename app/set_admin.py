@@ -45,11 +45,15 @@ def main():
         
     current_admin_status = row[1]
     
-    if current_admin_status == is_admin:
+    if current_admin_status == is_admin and not is_admin:
         status_str = "Admin" if is_admin else "User"
         print(f"User '{username}' is already {status_str}.")
     else:
-        cur.execute("UPDATE Users SET IsAdmin=? WHERE Username=?", (is_admin, username))
+        # Promoting an account also approves it, allowing secure first-admin
+        # bootstrap without assigning privileges to the first public signup.
+        cur.execute("UPDATE Users SET IsAdmin=?, "
+                    "Approved=CASE WHEN ?=1 THEN 1 ELSE Approved END "
+                    "WHERE Username=?", (is_admin, is_admin, username))
         con.commit()
         action = "promoted to Admin" if is_admin else "demoted to User"
         print(f"User '{username}' has been {action}.")

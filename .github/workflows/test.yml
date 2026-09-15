@@ -29,6 +29,8 @@ jobs:
           OPENBLAS_NUM_THREADS: '1'
       - run: bash run_pylint.sh
       - run: node --test scripts/tests/*.test.cjs
+      - run: npm ci --prefix scripts/browser-tests --ignore-scripts
+      - run: npm test --prefix scripts/browser-tests
       - run: pip-audit -r app/requirements.txt --no-deps --disable-pip
   image:
     name: Production image smoke test

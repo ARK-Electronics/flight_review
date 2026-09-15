@@ -20,6 +20,7 @@ sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plot_
 from tornado.web import StaticFileHandler
 from tornado.web import RedirectHandler
 from runtime_config import cookie_secret, require_persistent_storage
+from bokeh_security import FlightReviewAuthProvider, session_options
 from backup_scheduler import start_backups
 from tornado_handlers.download import DownloadHandler
 from tornado_handlers.upload import UploadHandler
@@ -103,7 +104,8 @@ main_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plot_app'
 handler = DirectoryHandler(filename=main_path)
 applications['/plot_app'] = Application(handler)
 
-server_kwargs = {}
+server_kwargs = session_options(session_secret)
+server_kwargs['xsrf_cookies'] = True
 if args.port is not None: server_kwargs['port'] = args.port
 if args.use_xheaders: server_kwargs['use_xheaders'] = args.use_xheaders
 server_kwargs['num_procs'] = args.numprocs
@@ -196,24 +198,6 @@ extra_patterns = [
 
 server = None
 custom_port = 5006
-
-# Bokeh Auth Provider (import deferred until after local handlers are loaded)
-from bokeh.server.auth_provider import AuthProvider  # pylint: disable=wrong-import-order,ungrouped-imports
-
-
-class FlightReviewAuthProvider(AuthProvider):
-    """Read the Flight Review session cookie for Bokeh auth."""
-
-    # Bokeh's type stubs mark get_user as a property; the runtime API is a
-    # method taking the request handler. Suppress the mismatch.
-    def get_user(self, request_handler):  # pylint: disable=arguments-differ,invalid-overridden-method
-        """Return the signed-in username, or None."""
-        return request_handler.get_secure_cookie("user")
-
-    @property
-    def login_url(self):
-        """URL of the login page."""
-        return "/login"
 
 while server is None:
     try:
