@@ -1,11 +1,14 @@
 FROM python:3.12-slim-bookworm AS build
-RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ libfftw3-dev \
+# Base images can lag Debian security updates for already-installed libraries.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends gcc g++ libfftw3-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY app/requirements.txt /tmp/requirements.txt
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt
 
 FROM python:3.12-slim-bookworm
-RUN apt-get update && apt-get install -y --no-install-recommends libfftw3-double3 libfftw3-single3 \
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends libfftw3-double3 libfftw3-single3 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 flight && useradd --uid 10001 --gid flight --create-home flight
 COPY --from=build /opt/venv /opt/venv
