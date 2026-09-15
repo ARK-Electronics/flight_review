@@ -58,6 +58,7 @@ class AuthSecurityTests(AsyncHTTPTestCase):
                          patch.object(auth, 'process_pending_logs_for_user'),
                          patch.object(admin, 'process_pending_logs_for_user'),
                          patch.object(auth, 'send_approval_email', return_value=True),
+                         patch.object(auth, 'send_account_approved_email', return_value=True),
                          patch.object(auth, 'send_reset_password_email', return_value=False)]
         for item in self.patches:
             item.start()
@@ -73,6 +74,7 @@ class AuthSecurityTests(AsyncHTTPTestCase):
         return tornado.web.Application([
             ('/login', auth.LoginHandler),
             ('/register', auth.RegisterHandler),
+            ('/approve_user', auth.ApproveUserHandler),
             ('/forgot_password', auth.ForgotPasswordHandler),
             ('/reset_password', auth.ResetPasswordHandler),
             ('/account', api_key.AccountHandler),
@@ -131,6 +133,59 @@ class AuthSecurityTests(AsyncHTTPTestCase):
         response = self.browser_post('/account', {'action': 'revoke'}, self.session_cookie())
         self.assertEqual(response.code, 200)
         self.assertIsNone(api_key.lookup_user_by_api_key(self.api_key))
+
+    def test_approval_link_requires_admin_confirmation_with_csrf(self):
+        token = 'pending-account-approval-token'
+        with sqlite3.connect(self.db) as con:
+            con.execute('''INSERT INTO Users
+                (Username, PasswordHash, Email, Approved, IsAdmin, AccountToken)
+                VALUES ('pending', ?, 'pending@example.com', 0, 0, ?)''',
+                        (self.password_hash, token))
+            con.execute('''INSERT INTO Users
+                (Username, PasswordHash, Approved, IsAdmin)
+                VALUES ('member', ?, 1, 0), ('unapproved-admin', ?, 0, 1)''',
+                        (self.password_hash, self.password_hash))
+
+        path = '/approve_user?' + urlencode({'token': token})
+        response = self.fetch(path, follow_redirects=False)
+        self.assertEqual(response.code, 302)
+        self.assertIn('next=', response.headers['Location'])
+        response = self.fetch(path, headers={'Cookie': 'user=' + self.session_cookie()})
+        self.assertEqual(response.code, 200)
+        self.assertIn(b'pending@example.com', response.body)
+        tags = _HTMLTags(response.body.decode()).tags
+        self.assertTrue(any(tag == 'form' and attrs.get('method') == 'post'
+                            and attrs.get('action') == '/approve_user' for tag, attrs in tags))
+        self.assertTrue(any(tag == 'input' and attrs.get('name') == '_xsrf'
+                            for tag, attrs in tags))
+        with sqlite3.connect(self.db) as con:
+            self.assertEqual(con.execute(
+                "SELECT Approved FROM Users WHERE Username='pending'").fetchone(), (0,))
+        auth.send_account_approved_email.assert_not_called()
+        auth.process_pending_logs_for_user.assert_not_called()
+
+        for session in (None, self.session_cookie('member'), self.session_cookie('unapproved-admin')):
+            response = self.browser_post('/approve_user', {'token': token}, session)
+            self.assertEqual(response.code, 403)
+        response = self.fetch('/approve_user', method='POST', body=urlencode({'token': token}),
+                              headers={'Cookie': 'user=' + self.session_cookie()})
+        self.assertEqual(response.code, 403)
+        response = self.browser_post('/approve_user', {'token': 'invalid'}, self.session_cookie())
+        self.assertEqual(response.code, 404)
+        with sqlite3.connect(self.db) as con:
+            self.assertEqual(con.execute(
+                "SELECT Approved FROM Users WHERE Username='pending'").fetchone(), (0,))
+
+        response = self.browser_post('/approve_user', {'token': token}, self.session_cookie())
+        self.assertEqual(response.code, 200)
+        self.assertIn(b'This account is approved.', response.body)
+        with sqlite3.connect(self.db) as con:
+            self.assertEqual(con.execute(
+                "SELECT Approved, AccountToken FROM Users WHERE Username='pending'").fetchone(), (1, ''))
+        auth.send_account_approved_email.assert_called_once()
+        response = self.browser_post('/approve_user', {'token': token}, self.session_cookie())
+        self.assertEqual(response.code, 404)
+        auth.send_account_approved_email.assert_called_once()
 
     def test_sessions_expire_and_reject_legacy_or_forged_cookies(self):
         valid = self.session_cookie()

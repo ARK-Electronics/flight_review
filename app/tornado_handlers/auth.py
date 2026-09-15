@@ -1,5 +1,6 @@
 """Authentication handlers: login, logout, register, approve, password reset."""
 
+from contextlib import closing
 import os
 import sqlite3
 import sys
@@ -21,6 +22,7 @@ from .send_email import (
     send_approval_email, send_account_approved_email, send_reset_password_email)
 from .upload import process_pending_logs_for_user
 from .common import TornadoRequestHandlerBase
+from .admin import _require_admin
 from .security import SESSION_MAX_AGE_DAYS, client_ip, get_rate_limiter, session_cookie_value
 
 
@@ -195,72 +197,57 @@ class RegisterHandler(AuthRequestHandler):
 
 
 class ApproveUserHandler(TornadoRequestHandlerBase):
-    """Approve a user account via tokenized email link."""
+    """Confirm emailed approval links and require an administrator's POST."""
 
+    @tornado.web.authenticated
     def get(self):
-        """Approve the account associated with the token query param."""
-        token = self.get_argument("token", None)
-        if not token:
-            self.render_jinja(
-                'login.html', error="Invalid approval link.", next="/")
+        """Show the account without approving it when a link is opened/scanned."""
+        if not _require_admin(self):
             return
+        token = self.get_query_argument('token', '')
+        with closing(sqlite3.connect(get_db_filename())) as con:
+            username, approved, email = self._account_for_token(con, token)
+        self.set_header('Cache-Control', 'no-store')
+        self.render_jinja('approve_user.html', username=username, email=email,
+                          approved=approved, token=token)
 
-        con = None
-        try:
-            con = sqlite3.connect(get_db_filename())
-            cur = con.cursor()
+    @tornado.web.authenticated
+    def post(self):
+        """Approve only after an administrator submits the protected form."""
+        if not _require_admin(self):
+            return
+        token = self.get_body_argument('token', '')
+        with closing(sqlite3.connect(get_db_filename())) as con:
+            username, approved, email = self._account_for_token(con, token)
+            if not approved:
+                cur = con.execute(
+                    "UPDATE Users SET Approved=1, AccountToken='' "
+                    "WHERE Username=? AND AccountToken=? AND Approved=0",
+                    (username, token))
+                con.commit()
+                if cur.rowcount != 1:
+                    raise tornado.web.HTTPError(409, 'Approval link is no longer valid.')
 
-            # Find user with this token
-            cur.execute(
-                "SELECT Username, Approved, Email FROM Users "
-                "WHERE AccountToken=?",
-                (token,))
-            row = cur.fetchone()
+        if not approved:
+            login_url = f"{get_http_protocol()}://{get_domain_name()}/login"
+            send_account_approved_email(email, username, login_url)
+            IOLoop.current().run_in_executor(
+                None, process_pending_logs_for_user, username)
 
-            if row:
-                username = row[0]
-                approved = row[1]
-                email = row[2]
+        self.set_header('Cache-Control', 'no-store')
+        self.render_jinja('approve_user.html', username=username, email=email,
+                          approved=True, token=None)
 
-                if approved:
-                    self.render_jinja(
-                        'login.html', error=None,
-                        message=f"Account for {username} already approved.",
-                        next="/")
-                else:
-                    # Approve the account
-                    cur.execute(
-                        "UPDATE Users SET Approved=1 WHERE Username=?",
-                        (username,))
-                    con.commit()
-
-                    # Send approval notification to user
-                    protocol = get_http_protocol()
-                    domain = get_domain_name()
-                    login_url = f"{protocol}://{domain}/login"
-                    send_account_approved_email(email, username, login_url)
-
-                    # Parse any logs the user uploaded while pending approval
-                    IOLoop.current().run_in_executor(
-                        None, process_pending_logs_for_user, username)
-
-                    self.render_jinja(
-                        'login.html', error=None,
-                        message=(
-                            f"Account for {username} approved successfully!"),
-                        next="/")
-            else:
-                self.render_jinja(
-                    'login.html',
-                    error="Invalid or expired approval link.",
-                    next="/")
-
-        except Exception:
-            traceback.print_exc()
-            self.write_error(500)
-        finally:
-            if con:
-                con.close()
+    @staticmethod
+    def _account_for_token(con, token):
+        if not token:
+            raise tornado.web.HTTPError(404, 'Invalid or expired approval link.')
+        row = con.execute(
+            'SELECT Username, Approved, Email FROM Users WHERE AccountToken=?',
+            (token,)).fetchone()
+        if row is None:
+            raise tornado.web.HTTPError(404, 'Invalid or expired approval link.')
+        return row
 
 
 class ForgotPasswordHandler(AuthRequestHandler):

@@ -123,7 +123,11 @@ pip install --require-hashes -r app/requirements.txt
 pip install -r app/requirements-dev.txt
 PYTHONPATH=app:app/plot_app:app/plot_app/libevents/libs/python pytest app/tests -q
 bash run_pylint.sh
+node --test scripts/tests/*.test.cjs
+npm ci --prefix scripts/browser-tests --ignore-scripts
+npm test --prefix scripts/browser-tests
 ```
+Browser security tests require Node.js 20 or newer.
 For notebooks install `app/requirements-notebook.in` separately.
 To update runtime dependencies with review:
 ```sh
