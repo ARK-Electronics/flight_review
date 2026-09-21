@@ -28,7 +28,7 @@ except ImportError:
     _config = mock.MagicMock()
     _config.get_cache_filepath.return_value = _cache_dir
     _config.get_xai_api_key.return_value = ''
-    _config.get_xai_model.return_value = 'grok-4.6'
+    _config.get_xai_model.return_value = 'grok-4.7'
     for _name, _mod in (
             ('numpy', mock.MagicMock()),
             ('pyulog', mock.MagicMock()),
@@ -102,7 +102,7 @@ class CallGrokTimeoutTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(status, 504)
         self.assertIn('timed out', payload)
-        self.assertIn('grok-4.6', payload)
+        self.assertIn('grok-4.7', payload)
 
     def test_other_http_client_error_returns_502(self):
         class FakeClient:
@@ -117,7 +117,7 @@ class CallGrokTimeoutTests(unittest.TestCase):
         self.assertEqual(status, 502)
         self.assertIn('xAI API error', payload)
 
-    def test_grok_46_sends_selected_reasoning_effort(self):
+    def test_grok_47_sends_selected_reasoning_effort(self):
         captured = {}
 
         class FakeClient:
@@ -131,7 +131,7 @@ class CallGrokTimeoutTests(unittest.TestCase):
         with mock.patch.object(ai_analysis, 'AsyncHTTPClient', return_value=FakeClient()):
             ok, payload, status = _run(
                 lambda: ai_analysis._call_grok(
-                    'key', 'grok-4.6', 'sys', 'user', effort='low'))
+                    'key', 'grok-4.7', 'sys', 'user', effort='low'))
 
         self.assertTrue(ok)
         self.assertEqual(status, 200)
@@ -184,6 +184,22 @@ class CallGrokTimeoutTests(unittest.TestCase):
 
 
 class ModelAndEffortTests(unittest.TestCase):
+    def test_default_model_is_grok_47_without_catalog_discovery(self):
+        with mock.patch.object(ai_analysis, 'get_xai_model', return_value='grok-4.7'), \
+                mock.patch.object(ai_analysis, 'pick_newest_grok_model') as discover:
+            self.assertEqual(ai_analysis._default_analysis_model(), 'grok-4.7')
+            discover.assert_not_called()
+
+    def test_default_model_preserves_configured_override(self):
+        with mock.patch.object(ai_analysis, 'get_xai_model', return_value='grok-4.6'):
+            self.assertEqual(ai_analysis._default_analysis_model(), 'grok-4.6')
+
+    def test_default_model_falls_back_to_grok_47(self):
+        for setting in ('', '   ', 'invalid model'):
+            with self.subTest(setting=setting), \
+                    mock.patch.object(ai_analysis, 'get_xai_model', return_value=setting):
+                self.assertEqual(ai_analysis._default_analysis_model(), 'grok-4.7')
+
     def test_default_model_is_newest_flagship(self):
         newest = ai_analysis.pick_newest_grok_model([
             'grok-build',
@@ -209,6 +225,7 @@ class ModelAndEffortTests(unittest.TestCase):
         self.assertEqual(ai_analysis._sanitize_effort('xhigh'), 'xhigh')
 
     def test_supports_reasoning_effort(self):
+        self.assertTrue(ai_analysis._supports_reasoning_effort('grok-4.7'))
         self.assertTrue(ai_analysis._supports_reasoning_effort('grok-4.6'))
         self.assertTrue(ai_analysis._supports_reasoning_effort('grok-4.5'))
         self.assertTrue(ai_analysis._supports_reasoning_effort('grok-4-latest'))

@@ -79,6 +79,13 @@ python setup_db.py
 - Any setting on `config_user.ini` has priority over
   `config_default.ini`
 
+AI flight analysis, PID analysis, and chat default to `grok-4.7`. Set
+`XAI_API_KEY` to enable xAI. `XAI_MODEL` overrides the configured model;
+`[ai_analysis] xai_model` in `config_user.ini` can also override the default.
+For existing deployments, update any older model pin to `grok-4.7` and redeploy
+the application so web and analysis workers use the new setting. The live model list still offers
+other models for explicit selection without changing the configured default.
+
 ## Usage
 
 For local usage, the server can be started directly with a log file name,

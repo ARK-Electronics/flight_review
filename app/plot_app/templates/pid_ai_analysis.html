@@ -10,7 +10,7 @@
         </h4>
         <p class="pid-ai-lead">
             Analyze the step-response curves on this page and recommend PX4 rate/attitude
-            gain changes. Uses the newest Grok model by default.
+            gain changes. Uses Grok 4.7 by default unless configured otherwise.
         </p>
     </div>
 
@@ -84,7 +84,7 @@
                     <span class="visually-hidden">Loading...</span>
                 </div>
                 <div>Computing step-response metrics and asking Grok for tuning advice.
-                    Reasoning models such as grok-4.6 can take several minutes.</div>
+                    Reasoning models such as grok-4.7 can take several minutes.</div>
             </div>`;
     }
 
@@ -162,7 +162,7 @@
             data.models.forEach(mid => {
                 const opt = document.createElement('option');
                 opt.value = mid;
-                opt.textContent = mid === preferred ? mid + ' (newest)' : mid;
+                opt.textContent = mid === preferred ? mid + ' (default)' : mid;
                 if (mid === preferred) {
                     opt.selected = true;
                     found = true;
@@ -172,7 +172,7 @@
             if (!found && preferred) {
                 const opt = document.createElement('option');
                 opt.value = preferred;
-                opt.textContent = preferred + ' (newest)';
+                opt.textContent = preferred + ' (default)';
                 opt.selected = true;
                 modelSelect.insertBefore(opt, modelSelect.firstChild);
             }

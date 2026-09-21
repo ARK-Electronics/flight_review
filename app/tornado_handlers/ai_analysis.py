@@ -29,8 +29,8 @@ from .common import get_jinja_env, TornadoRequestHandlerBase
 
 AI_ANALYSIS_TEMPLATE = 'ai_analysis.html'
 
-# Newest known flagship; used when the live model list is empty or unreachable.
-_FALLBACK_GROK_MODEL = 'grok-4.6'
+# Default flagship when the configured model is missing or invalid.
+_FALLBACK_GROK_MODEL = 'grok-4.7'
 
 # xAI documents a 3600s client timeout for grok-4.6. Default reasoning effort is
 # high, so time-to-first-token is often ~50s and a full log analysis commonly
@@ -114,9 +114,9 @@ def pick_newest_grok_model(model_ids, fallback=None):
     return max(pool, key=_grok_model_sort_key)
 
 
-def _default_analysis_model(model_ids=None):
-    """Always default to the newest Grok model, with a configured fallback."""
-    return pick_newest_grok_model(model_ids, fallback=_FALLBACK_GROK_MODEL)
+def _default_analysis_model():
+    """Use the configured model (Grok 4.7 by default), independent of the catalog."""
+    return _sanitize_model_id(get_xai_model(), fallback=_FALLBACK_GROK_MODEL)
 
 
 def _get_cache_path(log_id, kind='full'):
@@ -367,7 +367,7 @@ def _call_grok(api_key, model, system_prompt, user_prompt=None, effort=None,
         if exc.code == 599:
             raise tornado.gen.Return((False, (
                 'xAI API request timed out after {}s. Reasoning models such as '
-                'grok-4.6 can take several minutes on a full log; retry or pick '
+                'grok-4.7 can take several minutes on a full log; retry or pick '
                 'a faster model such as grok-build.'
             ).format(_GROK_REQUEST_TIMEOUT_SECONDS), 504))
         raise tornado.gen.Return((
@@ -1122,7 +1122,7 @@ class AIAnalysisModelsHandler(TornadoRequestHandlerBase):
         self.set_header('Content-Type', 'application/json')
         self.write(json.dumps({
             'models': unique_ids,
-            'default': _default_analysis_model(unique_ids),
+            'default': _default_analysis_model(),
             'efforts': list(_ALLOWED_EFFORTS),
             'default_effort': _DEFAULT_EFFORT,
         }))

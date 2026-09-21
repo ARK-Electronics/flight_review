@@ -391,7 +391,7 @@
                            or set the <code>XAI_API_KEY</code> environment variable.</p>
                         <pre style="text-align:left; max-width:400px; margin:16px auto;">[ai_analysis]
 xai_api_key = xai-your-key-here
-xai_model = grok-4.6</pre>
+xai_model = grok-4.7</pre>
                         <p class="text-muted mt-2">Get an API key at <a href="https://console.x.ai/" target="_blank">console.x.ai</a></p>
                     </div>
                 </div>
@@ -546,7 +546,7 @@ xai_model = grok-4.6</pre>
                     <span class="visually-hidden">Loading...</span>
                 </div>
                 <div class="status-text">Analyzing flight data...</div>
-                <div class="substatus-text">Extracting ULog data and sending it to Grok. Reasoning models such as grok-4.6 can take several minutes.</div>
+                <div class="substatus-text">Extracting ULog data and sending it to Grok. Reasoning models such as grok-4.7 can take several minutes.</div>
             </div>
         `;
 
@@ -695,13 +695,13 @@ xai_model = grok-4.6</pre>
                     return;
                 }
                 const preferred = data.default || DEFAULT_MODEL;
-                // Build options — always default to the newest Grok model
+                // Build options — select the configured default Grok model
                 select.innerHTML = '';
                 let foundPreferred = false;
                 data.models.forEach(mid => {
                     const opt = document.createElement('option');
                     opt.value = mid;
-                    opt.textContent = mid === preferred ? mid + ' (newest)' : mid;
+                    opt.textContent = mid === preferred ? mid + ' (default)' : mid;
                     if (mid === preferred) {
                         opt.selected = true;
                         foundPreferred = true;
@@ -712,7 +712,7 @@ xai_model = grok-4.6</pre>
                 if (!foundPreferred && preferred) {
                     const opt = document.createElement('option');
                     opt.value = preferred;
-                    opt.textContent = preferred + ' (newest)';
+                    opt.textContent = preferred + ' (default)';
                     opt.selected = true;
                     select.insertBefore(opt, select.firstChild);
                 }
@@ -748,7 +748,7 @@ xai_model = grok-4.6</pre>
                 document.getElementById('run-analysis-btn').classList.add('d-none');
                 document.getElementById('rerun-analysis-btn').classList.remove('d-none');
                 document.getElementById('export-analysis-btn').classList.remove('d-none');
-                // Keep the selector on the newest model so a re-run does not
+                // Keep the selector on the configured default so a re-run does not
                 // stay pinned to whatever older model produced the cache.
             }
         })

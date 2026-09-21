@@ -292,7 +292,7 @@ else:
                 curdoc().template_variables['log_id'] = log_id
                 curdoc().template_variables['has_xai_api_key'] = bool(
                     api_key and api_key.strip())
-                curdoc().template_variables['default_model'] = 'grok-4.6'
+                curdoc().template_variables['default_model'] = get_xai_model() or 'grok-4.7'
 
             except Exception as error:
                 # catch all errors to avoid showing a blank page. Note that if we
