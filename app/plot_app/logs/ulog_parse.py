@@ -41,6 +41,7 @@ HIGH_RATE_TOPICS = FIFO_TOPICS + (
 # Enough for vehicle DB, emails, PX4ULog.get_mav_type(), airframe name.
 ULOG_UPLOAD_MSG_FILTER = [
     'vehicle_status',
+    'vehicle_gnss',
     'vehicle_gps_position',
     'battery_status',
     'failsafe_flags',
@@ -49,6 +50,7 @@ ULOG_UPLOAD_MSG_FILTER = [
 
 CORE_TOPICS = [
     'vehicle_status',
+    'vehicle_gnss',
     'vehicle_gps_position',
     'vehicle_local_position',
     'vehicle_global_position',
