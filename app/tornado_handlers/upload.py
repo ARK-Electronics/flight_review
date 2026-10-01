@@ -26,7 +26,8 @@ from db_entry import DBVehicleData, DBData
 from config import get_db_connection, get_http_protocol, get_domain_name, \
     email_notifications_config, get_ulge_private_key_path
 from helper import get_total_flight_time, validate_url, get_log_filename, \
-    get_log_filename_with_ext, load_log_file, get_airframe_name, ULogException, decrypt_ulge_payload
+    get_log_filename_with_ext, load_log_file, get_airframe_name, ULogException, \
+    ULogTimeoutException, decrypt_ulge_payload, is_valid_email, is_valid_ulog
 from overview_generator import generate_overview_img_from_id
 
 from logs.px4_ulog_compat import PX4ULogCompat
@@ -653,7 +654,10 @@ class UploadHandler(TornadoRequestHandlerBase):
                     IOLoop.instance().add_callback(generate_overview_img_from_id, log_id)
 
                 # send notification emails
-                if not getattr(self, 'support_upload', False):
+                # never for CI or support uploads, and only for a valid address and a
+                # log with actual data (prevents abusing the upload form as a mail relay)
+                if (not getattr(self, 'support_upload', False) and source != 'CI'
+                        and is_valid_email(email) and is_valid_ulog(ulog)):
                     send_notification_email(email, full_plot_url, delete_url, edit_url, info)
 
                 admin_email = "logs@arkelectron.com"
@@ -682,6 +686,15 @@ class UploadHandler(TornadoRequestHandlerBase):
 
             except SizeLimitError as exc:
                 raise CustomHTTPError(413, 'Upload field exceeds the size limit') from exc
+
+            except ULogTimeoutException as e:
+                # transient: the storage backend stalled while reading the file,
+                # not a problem with the file itself. 503 signals retryable.
+                raise CustomHTTPError(
+                    503,
+                    'The server timed out while reading your file. Your upload '
+                    'was received but could not be processed right now - please '
+                    'try uploading again in a moment.') from e
 
             except ULogException as e:
                 if isinstance(e.__cause__, MemoryError):
