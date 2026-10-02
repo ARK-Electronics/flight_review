@@ -34,6 +34,7 @@ _TIME_COLUMN_SCALE_US = {
     'time_ms': 1000, 'TimeMS': 1000, 'timeMS': 1000, 'time_s': 1000000,
 }
 _UNIT_SUFFIX = re.compile(r'^(.*?)\s*\(([^()]*)\)$')
+_SIGNAL_COLUMN = re.compile(r'(gyroADC|gyro|motor|rcCommand)\[\d+\]')
 # Blackbox Explorer writes one header row per sysConfig entry (~200 today).
 _MAX_HEADER_ROWS = 5000
 
@@ -51,7 +52,12 @@ def _column_name(raw: str) -> str:
 
 
 def _is_column_row(row: List[str]) -> bool:
-    return len(row) > 2 and any(_column_name(c) in _TIME_COLUMN_SCALE_US for c in row)
+    """The column row has a time column; sysConfig rows are "key","value" pairs,
+    so a two-field row only counts when its other field is a signal we read."""
+    names = [_column_name(c) for c in row]
+    if not any(n in _TIME_COLUMN_SCALE_US for n in names):
+        return False
+    return len(names) > 2 or any(_SIGNAL_COLUMN.fullmatch(n) for n in names)
 
 
 def _load_csv(path: str) -> Dict[str, np.ndarray]:

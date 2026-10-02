@@ -55,6 +55,11 @@ class BetaflightCSVTests(unittest.TestCase):
         rates = ulog.get_dataset('vehicle_angular_velocity').data
         np.testing.assert_allclose(rates['xyz[2]'], np.deg2rad([-90, -90]))
 
+    def test_two_column_time_and_signal(self):
+        ulog = self.read('time,motor[0]\n1000000,1500\n1000250,1600\n')
+        self.assertEqual((ulog.start_timestamp, ulog.last_timestamp), (1000000, 1000250))
+        np.testing.assert_allclose(ulog.get_dataset('actuator_motors').data['control[0]'], [0.5, 0.6])
+
     def test_missing_time_column_is_rejected(self):
         with self.assertRaises(ValueError):
             self.read('"Product","Blackbox"\n"a","b","c"\n1,2,3\n')
