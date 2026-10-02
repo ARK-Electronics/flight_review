@@ -12,6 +12,7 @@ import requests
 # this is needed for the following imports
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'plot_app'))
 from config import email_config
+from helper import is_valid_email
 
 
 def send_notification_email(email_address, plot_url, delete_url, edit_url, info):
@@ -20,8 +21,8 @@ def send_notification_email(email_address, plot_url, delete_url, edit_url, info)
     """
     print(f"send_notification_email called with email: '{email_address}'", flush=True)
 
-    if email_address == '':
-        print("Email address is empty, not sending notification.", flush=True)
+    if not is_valid_email(email_address):
+        print("Email address is invalid, not sending notification.", flush=True)
         return True
 
     description = info['description']

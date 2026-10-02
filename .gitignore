@@ -23,6 +23,7 @@ data/certbot
 
 app/private_key/private_key.pem
 
+.claude/
 .env
 
 node_modules/
