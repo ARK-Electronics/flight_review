@@ -6,7 +6,7 @@ from bokeh.models.widgets import Div
 from bokeh.layouts import column
 
 from config import plot_width, plot_config, colors3, colors8, colors2
-from helper import get_flight_mode_changes
+from helper import get_flight_mode_changes, GnssTopic
 from plotting import *
 from plotted_tables import get_heading_html
 
@@ -654,7 +654,8 @@ estimation problems that may need parameter tuning.
 
     # --- GPS Quality Metrics ---
     try:
-        gps = _safe_get_dataset(ulog, 'vehicle_gps_position')
+        gnss = GnssTopic(ulog)
+        gps = _safe_get_dataset(ulog, gnss.name)
         if gps is not None:
             div = Div(text="<h4>GPS Quality Metrics</h4>"
                       "<p>GPS accuracy and satellite count affect EKF performance.</p>")
@@ -663,13 +664,13 @@ estimation problems that may need parameter tuning.
 
             # Satellite count
             sat_field = None
-            if 'satellites_used' in gps_data:
-                sat_field = 'satellites_used'
+            if gnss.field('satellites_used') in gps_data:
+                sat_field = gnss.field('satellites_used')
             elif 'satellites_visible' in gps_data:
                 sat_field = 'satellites_visible'
 
             if sat_field:
-                data_plot = DataPlot(data, plot_config, 'vehicle_gps_position',
+                data_plot = DataPlot(data, plot_config, gnss.name,
                                      y_axis_label='Count',
                                      title='GPS Satellites Used',
                                      plot_height='small', x_range=x_range)
@@ -682,16 +683,16 @@ estimation problems that may need parameter tuning.
             acc_fields = []
             acc_labels = []
             acc_colors = []
-            if 'eph' in gps_data:
-                acc_fields.append('eph')
+            if gnss.field('eph') in gps_data:
+                acc_fields.append(gnss.field('eph'))
                 acc_labels.append('Horizontal Accuracy (EPH)')
                 acc_colors.append(colors8[0])
-            if 'epv' in gps_data:
-                acc_fields.append('epv')
+            if gnss.field('epv') in gps_data:
+                acc_fields.append(gnss.field('epv'))
                 acc_labels.append('Vertical Accuracy (EPV)')
                 acc_colors.append(colors8[1])
             if acc_fields:
-                data_plot = DataPlot(data, plot_config, 'vehicle_gps_position',
+                data_plot = DataPlot(data, plot_config, gnss.name,
                                      y_axis_label='[m]',
                                      title='GPS Position Accuracy',
                                      plot_height='small', x_range=x_range)
@@ -701,12 +702,12 @@ estimation problems that may need parameter tuning.
                     plots.append(data_plot.bokeh_plot)
 
             # Speed accuracy
-            if 's_variance_m_s' in gps_data:
-                data_plot = DataPlot(data, plot_config, 'vehicle_gps_position',
+            if gnss.field('speed_accuracy') in gps_data:
+                data_plot = DataPlot(data, plot_config, gnss.name,
                                      y_axis_label='[m/s]',
                                      title='GPS Speed Accuracy',
                                      plot_height='small', x_range=x_range)
-                data_plot.add_graph(['s_variance_m_s'], [colors8[2]],
+                data_plot.add_graph([gnss.field('speed_accuracy')], [colors8[2]],
                                     ['Speed Variance'])
                 plot_flight_modes_background(data_plot, flight_mode_changes)
                 if data_plot.finalize() is not None:
