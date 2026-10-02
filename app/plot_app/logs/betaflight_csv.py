@@ -5,8 +5,13 @@ Implementing a correct binary decoder in this repo would be a substantial
 project. Instead, we support the common workflow of exporting the log to CSV
 (via Blackbox Explorer) and ingesting that CSV.
 
+Both common CSV layouts are accepted:
+- Blackbox Explorer "Export CSV": quoted "key","value" header rows (firmware,
+  PIDs, filters) followed by the column row and the data.
+- blackbox_decode: a single column row with unit suffixes, e.g. "time (us)".
+
 Expected CSV columns (best-effort; not all are required):
-- time (microseconds) OR time_us OR time_ms
+- time (microseconds) OR time_us OR time_ms OR time (us|ms|s)
 - gyroADC[0], gyroADC[1], gyroADC[2] (deg/s) OR gyro[0..2]
 - motor[0..]
 - rcCommand[0..3] OR rc[0..3]
@@ -16,31 +21,71 @@ This is enough to populate angular rate, RC setpoints, and motor outputs.
 
 from __future__ import annotations
 
+import csv
+import re
 from typing import Dict, List, Optional
 
 import numpy as np
 
 from .compat_ulog import CompatDataset, CompatULog
 
+_TIME_COLUMN_SCALE_US = {
+    'time': 1, 'time_us': 1, 'TimeUS': 1, 'time_usec': 1,
+    'time_ms': 1000, 'TimeMS': 1000, 'timeMS': 1000, 'time_s': 1000000,
+}
+_UNIT_SUFFIX = re.compile(r'^(.*?)\s*\(([^()]*)\)$')
+# Blackbox Explorer writes one header row per sysConfig entry (~200 today).
+_MAX_HEADER_ROWS = 5000
+
+
+def _column_name(raw: str) -> str:
+    """Normalize blackbox_decode names: " time (us)" -> time_us, "vbat (V)" -> vbat."""
+    name = raw.strip()
+    match = _UNIT_SUFFIX.match(name)
+    if not match:
+        return name
+    base, unit = match.group(1), match.group(2).strip()
+    if base == 'time' and unit in ('us', 'ms', 's'):
+        return 'time_' + unit
+    return base
+
+
+def _is_column_row(row: List[str]) -> bool:
+    return len(row) > 2 and any(_column_name(c) in _TIME_COLUMN_SCALE_US for c in row)
+
 
 def _load_csv(path: str) -> Dict[str, np.ndarray]:
     import pandas as pd
 
-    # low_memory=False avoids DtypeWarning on mixed-type columns common in
-    # Blackbox Explorer exports (e.g. mode flags as int/str in later rows).
-    df = pd.read_csv(path, low_memory=False)
+    with open(path, encoding='utf-8-sig', errors='replace', newline='') as stream:
+        # Skip Blackbox Explorer's "key","value" rows; data starts at the column row.
+        for _ in range(_MAX_HEADER_ROWS):
+            offset = stream.tell()
+            if _is_column_row(next(csv.reader([stream.readline()]), [])):
+                stream.seek(offset)
+                break
+        else:
+            raise ValueError('CSV missing a column row with a time column '
+                             '(expected time/time_us/time_ms)')
+        # low_memory=False avoids DtypeWarning on mixed-type columns common in
+        # Blackbox Explorer exports (e.g. mode flags as int/str in later rows).
+        df = pd.read_csv(stream, skipinitialspace=True, low_memory=False)
+    df.columns = [_column_name(str(c)) for c in df.columns]
+    df = df.loc[:, ~df.columns.duplicated()]
+    # Text values (e.g. blackbox_decode flag names) become NaN rather than failing casts.
+    df = df.apply(pd.to_numeric, errors='coerce')
+    time_column = next(k for k in _TIME_COLUMN_SCALE_US if k in df.columns)
+    df = df[df[time_column].notna()]
+    if df.empty:
+        raise ValueError('CSV contains no data rows')
     data: Dict[str, np.ndarray] = {c: df[c].to_numpy() for c in df.columns}
     return data
 
 
 def _time_us_from_columns(cols: Dict[str, np.ndarray]) -> np.ndarray:
-    for k in ('time', 'time_us', 'TimeUS', 'time_usec'):
+    for k, scale in _TIME_COLUMN_SCALE_US.items():
         if k in cols:
-            t = cols[k].astype(np.int64)
-            return t
-    for k in ('time_ms', 'TimeMS', 'timeMS'):
-        if k in cols:
-            return cols[k].astype(np.int64) * 1000
+            return np.rint(cols[k].astype(np.float64) * scale).astype(np.int64)
     # Blackbox Explorer CSV sometimes uses "loopIteration" only; not supported.
     raise ValueError('CSV missing time column (expected time/time_us/time_ms)')
 
